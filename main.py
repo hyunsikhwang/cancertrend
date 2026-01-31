@@ -546,17 +546,18 @@ def main():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Bottom Tabs
-        tab1, tab2 = st.tabs(["📊 Data Table", "📋 Summary Stats"])
-        with tab1:
-            st.dataframe(filtered_df.to_pandas(), use_container_width=True)
-        with tab2:
-            summary = filtered_df.group_by(["gender", "age_group"]).agg([
-                pl.col("incidence_rate").mean().alias("Avg Rate"),
-                pl.col("incidence_rate").max().alias("Max Rate"),
-                pl.col("cases").sum().alias("Total Cases")
-            ]).sort(["gender", "age_group"])
-            st.dataframe(summary.to_pandas(), use_container_width=True)
+        # Bottom Data View (Collapsed by default)
+        with st.expander("📊 상세 데이터 및 요약 통계 보기 (Detailed Data & Stats)", expanded=False):
+            tab1, tab2 = st.tabs(["📊 Data Table", "📋 Summary Stats"])
+            with tab1:
+                st.dataframe(filtered_df.to_pandas(), use_container_width=True)
+            with tab2:
+                summary = filtered_df.group_by(["gender", "age_group"]).agg([
+                    pl.col("incidence_rate").mean().alias("Avg Rate"),
+                    pl.col("incidence_rate").max().alias("Max Rate"),
+                    pl.col("cases").sum().alias("Total Cases")
+                ]).sort(["gender", "age_group"])
+                st.dataframe(summary.to_pandas(), use_container_width=True)
     else:
         st.warning("No data found.")
 
