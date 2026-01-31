@@ -6,8 +6,7 @@ import os
 import streamlit as st
 from pyecharts import options as opts
 from pyecharts.charts import Line, Bar, Grid, Timeline
-from pyecharts.commons.utils import JsCode
-from streamlit_echarts import st_pyecharts
+from streamlit_echarts import st_pyecharts, JsCode
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 
@@ -604,11 +603,7 @@ def main():
             (pl.col("custom_incidence_rate") / pl.col("custom_incidence_rate").sum().over(["gender", "custom_age_group"]) * 100).round(1).alias("proportion")
         )
         
-        custom_age_order = ["0-19세", "20-39세", "40-49세", "50-59세", "60세+"]
-        
         from pyecharts.charts import Pie
-
-        custom_age_order = ["0-19세", "20-39세", "40-49세", "50-59세", "60세+"]
         
         def create_stacked_bar_chart(df, gender_label):
             gender_df = df.filter(pl.col("gender") == gender_label)
@@ -678,7 +673,7 @@ def main():
                     label_opts=opts.LabelOpts(
                         is_show=True, 
                         position="inside",
-                        formatter=JsCode("function(params) { return params.value > 0 ? params.seriesName.replace('(', '\\n(') : ''; }"),
+                        formatter=JsCode("function(params) { return params.value > 0 ? (params.seriesName.indexOf('(') > -1 ? params.seriesName.replace('(', '\\n(') : params.seriesName) : ''; }"),
                         font_size=10,
                         color="#fff"
                     ),
@@ -693,7 +688,7 @@ def main():
                 label_opts=opts.LabelOpts(
                     is_show=True, 
                     position="inside",
-                    formatter=JsCode("function(params) { return params.value > 0 ? params.seriesName.replace('(', '\\n(') : ''; }"),
+                    formatter=JsCode("function(params) { return params.value > 0 ? (params.seriesName.indexOf('(') > -1 ? params.seriesName.replace('(', '\\n(') : params.seriesName) : ''; }"),
                     font_size=10,
                     color="#fff"
                 ),
