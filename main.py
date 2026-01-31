@@ -35,9 +35,9 @@ st.markdown("""
         max-width: 1200px !important;
     }
     
-    [data-testid="stHeader"] {
+    /* [data-testid="stHeader"] {
         display: none;
-    }
+    } */
 
     .stApp {
         background-color: #ffffff;
@@ -87,8 +87,8 @@ st.markdown("""
         font-size: 0.9rem !important;
     }
 
-    /* Hide Streamlit components */
-    #MainMenu, footer, header, .stDeployButton {
+    /* Hide unnecessary Streamlit components but keep the header for sidebar toggle */
+    #MainMenu, footer, .stDeployButton {
         display: none !important;
     }
 </style>
@@ -343,14 +343,14 @@ def main():
             tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
             legend_opts=opts.LegendOpts(pos_top="10%", orient="horizontal"),
             xaxis_opts=opts.AxisOpts(name="연도", type_="category", boundary_gap=False),
-            yaxis_opts=yaxis_opts[0] if not use_dual_axis else None,
+            yaxis_opts=yaxis_opts[0],
             datazoom_opts=[opts.DataZoomOpts(type_="inside")],
         )
         
         if use_dual_axis:
             line_chart.extend_axis(yaxis=yaxis_opts[1])
 
-        st_pyecharts(line_chart, height="650px", key="cancer_trend_dual_v1")
+        st_pyecharts(line_chart, height="650px", key="cancer_trend_dual_v2")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
