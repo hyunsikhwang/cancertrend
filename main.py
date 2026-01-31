@@ -6,6 +6,7 @@ import os
 import streamlit as st
 from pyecharts import options as opts
 from pyecharts.charts import Line, Bar, Grid, Timeline
+from pyecharts.commons.utils import JsCode
 from streamlit_echarts import st_pyecharts
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
@@ -677,7 +678,7 @@ def main():
                     label_opts=opts.LabelOpts(
                         is_show=True, 
                         position="inside",
-                        formatter="{a}",
+                        formatter=JsCode("function(params) { return params.value > 0 ? params.seriesName : ''; }"),
                         font_size=10,
                         color="#fff"
                     ),
@@ -692,7 +693,7 @@ def main():
                 label_opts=opts.LabelOpts(
                     is_show=True, 
                     position="inside",
-                    formatter="{a}",
+                    formatter=JsCode("function(params) { return params.value > 0 ? params.seriesName : ''; }"),
                     font_size=10,
                     color="#fff"
                 ),
