@@ -4,12 +4,19 @@ import asyncio
 import json
 import os
 import streamlit as st
-import plotly.express as px
+from pyecharts import options as opts
+from pyecharts.charts import Line
+from streamlit_echarts import st_pyecharts
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 
 # Page config
-st.set_page_config(page_title="Cancer Incidence Trend Analysis", layout="wide")
+st.set_page_config(
+    page_title="Cancer Incidence Trend",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # 환경 변수 로드 (로컬용)
 load_dotenv()
@@ -20,6 +27,68 @@ API_KEY = st.secrets.get("KOSIS_API_KEY") or os.getenv("KOSIS_API_KEY")
 if not API_KEY:
     st.error("KOSIS_API_KEY not found. Please set it in Streamlit Secrets or .env file.")
     st.stop()
+
+# Custom CSS for Value Horizon Look & Feel
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 1200px !important;
+    }
+    
+    [data-testid="stHeader"] {
+        display: none;
+    }
+
+    .stApp {
+        background-color: #ffffff;
+        color: #1a1a1a;
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* Hero Section */
+    .hero-container {
+        padding: 2rem 0;
+        text-align: center;
+        border-bottom: 1px solid #f0f0f0;
+        margin-bottom: 2.5rem;
+    }
+
+    .hero-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #111111;
+        margin-bottom: 0.5rem;
+        letter-spacing: -1px;
+    }
+
+    .hero-subtitle {
+        font-size: 1.1rem;
+        font-weight: 400;
+        color: #666666;
+    }
+
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa;
+        border-right: 1px solid #eaeaea;
+    }
+
+    .stSelectbox label, .stMultiSelect label {
+        font-weight: 600 !important;
+        color: #111111 !important;
+        font-size: 0.9rem !important;
+    }
+
+    /* Hide Streamlit components */
+    #MainMenu, footer, header, .stDeployButton {
+        display: none !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 def update_url_params(url, start_year, end_year):
     """URL의 startPrdDe와 endPrdDe 파라미터를 안전하게 업데이트하고 apiKey를 삽입합니다."""
@@ -128,16 +197,36 @@ async def _get_processed_data_async():
     # 조인
     joined = df_cancer.join(df_pop, on=["year", "gender", "age_group"], how="left")
     
-    # 최종 산출
-    final_df = joined.filter(pl.col("population").is_not_null()).with_columns(
+    # 연령별 발생률 계산
+    age_seg_df = joined.filter(pl.col("population").is_not_null()).with_columns(
         ((pl.col("cases") / pl.col("population")) * 100000).round(2).alias("incidence_rate")
-    ).sort(["year", "gender", "age_group", "cancer_type"])
+    )
+    
+    # 전체 연령(Total) 합계 계산
+    total_df = joined.filter(pl.col("population").is_not_null()).group_by(["year", "gender", "cancer_type"]).agg([
+        pl.col("cases").sum(),
+        pl.col("population").sum()
+    ]).with_columns([
+        pl.lit("계(전체)").alias("age_group"),
+        ((pl.col("cases") / pl.col("population")) * 100000).round(2).alias("incidence_rate")
+    ])
+    
+    # 최종 결합
+    final_df = pl.concat([
+        age_seg_df.select(["year", "gender", "age_group", "cancer_type", "cases", "incidence_rate"]),
+        total_df.select(["year", "gender", "age_group", "cancer_type", "cases", "incidence_rate"])
+    ]).sort(["year", "gender", "age_group", "cancer_type"])
     
     return final_df
 
 def main():
-    st.title("📊 Cancer Incidence Trend Analysis (1999-2023)")
-    st.markdown("KOSIS API 데이터를 활용하여 암 발생률 추이를 분석합니다.")
+    # Hero Section
+    st.markdown("""
+    <div class="hero-container">
+        <div class="hero-title">📊 Cancer Incidence Trend</div>
+        <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     data = get_processed_data()
 
@@ -146,16 +235,25 @@ def main():
         return
 
     # Sidebar Filters
-    st.sidebar.header("Filters")
+    st.sidebar.markdown("### Search Filters")
     
     genders = data["gender"].unique().to_list()
-    selected_gender = st.sidebar.selectbox("Select Gender", genders)
+    selected_gender = st.sidebar.selectbox("Gender", genders)
     
     cancer_types = data["cancer_type"].unique().sort().to_list()
-    selected_cancer = st.sidebar.selectbox("Select Cancer Type", cancer_types, index=cancer_types.index("모든 암(C00-C96)") if "모든 암(C00-C96)" in cancer_types else 0)
+    selected_cancer = st.sidebar.selectbox("Cancer Type", cancer_types, index=cancer_types.index("모든 암(C00-C96)") if "모든 암(C00-C96)" in cancer_types else 0)
     
     age_groups = data["age_group"].unique().sort().to_list()
-    selected_ages = st.sidebar.multiselect("Select Age Groups", age_groups, default=age_groups)
+    # '계(전체)'를 리스트의 맨 앞으로 이동
+    if "계(전체)" in age_groups:
+        age_groups.remove("계(전체)")
+        age_groups = ["계(전체)"] + age_groups
+        
+    selected_ages = st.sidebar.multiselect(
+        "Age Groups", 
+        age_groups, 
+        default=["계(전체)"] if "계(전체)" in age_groups else age_groups[:1]
+    )
 
     # Filter Data
     filtered_df = data.filter(
@@ -164,32 +262,62 @@ def main():
         (pl.col("age_group").is_in(selected_ages))
     )
 
-    # Visualizations
-    st.subheader(f"📈 Trend: {selected_cancer} ({selected_gender})")
-    
     if len(filtered_df) > 0:
-        # Chart 1: Incidence Rate over Years by Age Group
-        fig = px.line(
-            filtered_df.to_pandas(), 
-            x="year", 
-            y="incidence_rate", 
-            color="age_group",
-            title=f"Incidence Rate per 100,000 population",
-            labels={"incidence_rate": "Incidence Rate", "year": "Year", "age_group": "Age Group"}
+        # Chart Section
+        st.subheader(f"📈 {selected_cancer} Trend ({selected_gender})")
+        
+        # Prepare Data for Pyecharts
+        pivot_df = filtered_df.pivot(values="incidence_rate", index="year", on="age_group").sort("year")
+        x_data = pivot_df["year"].to_list()
+        
+        line_chart = (
+            Line(init_opts=opts.InitOpts(width="100%", height="600px"))
+            .add_xaxis(xaxis_data=x_data)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        
+        colors = [
+            '#5470c6', '#91cc75', '#fac858', '#ee6666', 
+            '#73c0de', '#3ba272', '#fc8452', '#9a60b4',
+            '#ea7ccc', '#516b91'
+        ]
+        
+        age_cols = [c for c in pivot_df.columns if c != "year"]
+        for i, age_group in enumerate(age_cols):
+            y_data = pivot_df[age_group].to_list()
+            line_chart.add_yaxis(
+                series_name=age_group,
+                y_axis=y_data,
+                is_smooth=True,
+                symbol_size=8,
+                label_opts=opts.LabelOpts(is_show=False),
+                linestyle_opts=opts.LineStyleOpts(width=3, color=colors[i % len(colors)]),
+                itemstyle_opts=opts.ItemStyleOpts(color=colors[i % len(colors)])
+            )
+            
+        line_chart.set_global_opts(
+            title_opts=opts.TitleOpts(title="Incidence Rate per 100,000 population", subtitle="Based on selected filters"),
+            tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
+            legend_opts=opts.LegendOpts(pos_top="5%", orient="horizontal"),
+            xaxis_opts=opts.AxisOpts(name="Year", type_="category", boundary_gap=False),
+            yaxis_opts=opts.AxisOpts(name="Rate"),
+            datazoom_opts=[opts.DataZoomOpts(type_="inside")],
+        )
+        
+        st_pyecharts(line_chart, height="600px", key="cancer_trend_chart")
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
         # Tabs for more details
-        tab1, tab2 = st.tabs(["Data Table", "Summary Stats"])
+        tab1, tab2 = st.tabs(["📊 Data Table", "📋 Summary Stats"])
         
         with tab1:
             st.dataframe(filtered_df.to_pandas(), use_container_width=True)
             
         with tab2:
             summary = filtered_df.group_by("age_group").agg([
-                pl.col("incidence_rate").mean().alias("avg_rate"),
-                pl.col("incidence_rate").max().alias("max_rate"),
-                pl.col("cases").sum().alias("total_cases")
+                pl.col("incidence_rate").mean().alias("Avg Rate"),
+                pl.col("incidence_rate").max().alias("Max Rate"),
+                pl.col("cases").sum().alias("Total Cases")
             ]).sort("age_group")
             st.dataframe(summary.to_pandas(), use_container_width=True)
     else:

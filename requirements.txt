@@ -1,5 +1,6 @@
 streamlit
 polars
 httpx
-plotly
+pyecharts
+streamlit-echarts
 python-dotenv
