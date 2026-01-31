@@ -614,53 +614,86 @@ def main():
             if gender_df.is_empty():
                 return None
             
-            # Find Top 5 cancers for this gender/year (summed across all custom age groups)
-            top_cancers = (
-                gender_df.group_by("cancer_type")
+            # 1. Identify Top 5 per age group
+            age_top5_map = {}
+            all_top_cancers_union = set()
+            
+            for age in custom_age_order:
+                age_subset = gender_df.filter(pl.col("custom_age_group") == age)
+                if age_subset.is_empty():
+                    age_top5_map[age] = []
+                    continue
+                
+                # Get top 5 cancers for THIS age group
+                top5 = (
+                    age_subset.sort("proportion", descending=True)
+                    .head(5)["cancer_type"].to_list()
+                )
+                age_top5_map[age] = top5
+                for c in top5:
+                    all_top_cancers_union.add(c)
+            
+            # Sort the union set by total incidence rate across all age groups 
+            # to provide a relatively stable stacking order (Largest at bottom)
+            union_list = (
+                gender_df.filter(pl.col("cancer_type").is_in(list(all_top_cancers_union)))
+                .group_by("cancer_type")
                 .agg(pl.col("custom_incidence_rate").sum().alias("total_rate"))
                 .sort("total_rate", descending=True)
-                .head(5)["cancer_type"].to_list()
+                ["cancer_type"].to_list()
             )
             
-            # Process data: Top 5 + Others
-            # Map each cancer type to its category (either its own name or "기타(Others)")
-            processed_df = gender_df.with_columns(
-                pl.when(pl.col("cancer_type").is_in(top_cancers))
-                .then(pl.col("cancer_type"))
-                .otherwise(pl.lit("기타(Others)"))
-                .alias("display_cancer_type")
-            ).group_by(["custom_age_group", "display_cancer_type"]).agg([
-                pl.col("proportion").sum().alias("proportion")
-            ])
+            # 2. Prepare data for each series
+            # Each bar will have: Top 5 specific to that bar, and the rest as "Others"
+            series_data = {c: [] for c in union_list}
+            series_data["기타(Others)"] = []
             
-            # Order categories: Top 5 (largest total first) then Others
-            # Actually, to stack from largest on bottom to smallest on top:
-            # Pyecharts stacks in order of add_yaxis calls.
-            # User wants: Bottom (Largest) -> ... -> Smalleest of Top 5 -> Others (Top)
-            series_names = top_cancers + ["기타(Others)"]
+            for age in custom_age_order:
+                age_subset = gender_df.filter(pl.col("custom_age_group") == age)
+                top5_for_this_age = age_top5_map.get(age, [])
+                
+                # Proportions for Top 5
+                age_top5_data = age_subset.filter(pl.col("cancer_type").is_in(top5_for_this_age))
+                age_top5_dict = dict(zip(age_top5_data["cancer_type"].to_list(), age_top5_data["proportion"].to_list()))
+                
+                # Proportions for Others (any cancer not in THIS group's Top 5)
+                age_others_data = age_subset.filter(~pl.col("cancer_type").is_in(top5_for_this_age))
+                others_sum = age_others_data["proportion"].sum()
+                
+                # Fill Union Series
+                for c in union_list:
+                    # Only show if it's Top 5 FOR THIS AGE GROUP
+                    if c in top5_for_this_age:
+                        series_data[c].append(float(age_top5_dict.get(c, 0)))
+                    else:
+                        series_data[c].append(0) # It goes to Others for this bar
+                
+                series_data["기타(Others)"].append(round(float(others_sum), 1))
             
+            # 3. Build Chart
+            # Stack order: Largest in union on bottom, Others on top
+            # add_yaxis calls are stacked bottom to top.
             bar = Bar(init_opts=opts.InitOpts(width="100%", height="550px"))
             bar.add_xaxis(custom_age_order)
             
-            for s_name in series_names:
-                # Filter for this series
-                s_df = processed_df.filter(pl.col("display_cancer_type") == s_name)
-                # Map to custom_age_order
-                y_vals = []
-                s_dict = dict(zip(s_df["custom_age_group"].to_list(), s_df["proportion"].to_list()))
-                for age in custom_age_order:
-                    val = s_dict.get(age, 0)
-                    y_vals.append(float(val))
-                
-                color = get_cancer_color(s_name) if s_name != "기타(Others)" else "#d3d3d3"
-                
+            # Add union series (sorted by size descending, so largest is added first -> bottom)
+            for s_name in union_list:
                 bar.add_yaxis(
                     s_name,
-                    y_vals,
+                    series_data[s_name],
                     stack="stack1",
                     label_opts=opts.LabelOpts(is_show=False),
-                    itemstyle_opts=opts.ItemStyleOpts(color=color)
+                    itemstyle_opts=opts.ItemStyleOpts(color=get_cancer_color(s_name))
                 )
+            
+            # Finally add Others at the top
+            bar.add_yaxis(
+                "기타(Others)",
+                series_data["기타(Others)"],
+                stack="stack1",
+                label_opts=opts.LabelOpts(is_show=False),
+                itemstyle_opts=opts.ItemStyleOpts(color="#d3d3d3")
+            )
             
             bar.set_global_opts(
                 title_opts=opts.TitleOpts(title=f"{prop_year}년 {gender_label} 연령별 암종 비중 (%)"),
