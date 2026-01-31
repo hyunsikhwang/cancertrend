@@ -381,14 +381,22 @@ def main():
 
         # New Section: Top 10 Cancers by Gender
         st.markdown("<br><hr>", unsafe_allow_html=True)
-        latest_year = data["year"].max()
-        st.subheader(f"🏆 Top 10 Cancers by Incidence Rate ({latest_year})")
+        st.subheader("🏆 Top 10 Cancers by Incidence Rate")
+        
+        # Year selection for ranking
+        all_years = sorted(data["year"].unique().to_list())
+        ranking_year = st.select_slider(
+            "분석 연도 선택",
+            options=all_years,
+            value=max(all_years),
+            key="ranking_year_slider"
+        )
         
         # Prepare ranking data
         ranking_df = data.filter(
-            (pl.col("year") == latest_year) & 
+            (pl.col("year") == ranking_year) & 
             (pl.col("age_group") == "계(전체)") &
-            (pl.col("cancer_type") != "모든 암(C00-C96)")
+            (~pl.col("cancer_type").str.starts_with("모든 암"))
         )
 
         def create_ranking_chart(df, gender_label, color):
@@ -420,11 +428,11 @@ def main():
         col_rank_m, col_rank_f = st.columns(2)
         with col_rank_m:
             bar_m = create_ranking_chart(ranking_df, "남자", "#5470c6")
-            st_pyecharts(bar_m, height="480px", key="rank_male_v1")
+            st_pyecharts(bar_m, height="480px", key=f"rank_male_{ranking_year}")
         
         with col_rank_f:
             bar_f = create_ranking_chart(ranking_df, "여자", "#ee6666")
-            st_pyecharts(bar_f, height="480px", key="rank_female_v1")
+            st_pyecharts(bar_f, height="480px", key=f"rank_female_{ranking_year}")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
