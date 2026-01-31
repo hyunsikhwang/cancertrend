@@ -633,22 +633,20 @@ def main():
                 for c in top5:
                     all_top_cancers_union.add(c)
             
-            # Sort the union set by total incidence rate across all age groups 
-            # to provide a relatively stable stacking order (Largest at bottom)
-            union_list = (
-                gender_df.filter(pl.col("cancer_type").is_in(list(all_top_cancers_union)))
-                .group_by("cancer_type")
-                .agg(pl.col("custom_incidence_rate").sum().alias("total_rate"))
-                .sort("total_rate", descending=True)
-                ["cancer_type"].to_list()
-            )
+            # Sort the union set by the MAX proportion it achieves in any age group
+            # This helps ensure that the 'most dominant' cancer in any group is likely to be at the bottom
+            cancer_ranks = []
+            for c in all_top_cancers_union:
+                max_prop = gender_df.filter(pl.col("cancer_type") == c)["proportion"].max()
+                cancer_ranks.append({"name": c, "max_prop": max_prop or 0})
+            
+            union_list = [item["name"] for item in sorted(cancer_ranks, key=lambda x: x["max_prop"], reverse=True)]
             
             # 2. Prepare data for each series
-            # Each bar will have: Top 5 specific to that bar, and the rest as "Others"
-            series_data = {c: [] for c in union_list}
-            series_data["기타(Others)"] = []
+            series_data = {c: [0.0] * len(custom_age_order) for c in union_list}
+            series_data["기타(Others)"] = [0.0] * len(custom_age_order)
             
-            for age in custom_age_order:
+            for idx, age in enumerate(custom_age_order):
                 age_subset = gender_df.filter(pl.col("custom_age_group") == age)
                 top5_for_this_age = age_top5_map.get(age, [])
                 
@@ -656,19 +654,13 @@ def main():
                 age_top5_data = age_subset.filter(pl.col("cancer_type").is_in(top5_for_this_age))
                 age_top5_dict = dict(zip(age_top5_data["cancer_type"].to_list(), age_top5_data["proportion"].to_list()))
                 
-                # Proportions for Others (any cancer not in THIS group's Top 5)
+                # Update series_data for Top 5
+                for c in top5_for_this_age:
+                    series_data[c][idx] = float(age_top5_dict.get(c, 0))
+                
+                # Proportions for Others (all cancers NOT in Top 5 for this specific bar)
                 age_others_data = age_subset.filter(~pl.col("cancer_type").is_in(top5_for_this_age))
-                others_sum = age_others_data["proportion"].sum()
-                
-                # Fill Union Series
-                for c in union_list:
-                    # Only show if it's Top 5 FOR THIS AGE GROUP
-                    if c in top5_for_this_age:
-                        series_data[c].append(float(age_top5_dict.get(c, 0)))
-                    else:
-                        series_data[c].append(0) # It goes to Others for this bar
-                
-                series_data["기타(Others)"].append(round(float(others_sum), 1))
+                series_data["기타(Others)"][idx] = round(float(age_others_data["proportion"].sum()), 1)
             
             # 3. Build Chart
             # Stack order: Largest in union on bottom, Others on top
