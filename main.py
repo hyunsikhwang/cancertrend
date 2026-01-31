@@ -605,46 +605,68 @@ def main():
         
         custom_age_order = ["0-19세", "20-39세", "40-49세", "50-59세", "60세+"]
         
-        def create_proportion_chart(df, gender_label):
-            gender_df = df.filter(pl.col("gender") == gender_label)
-            
-            # Get all cancer types present for the legend
-            all_cancers = sorted(gender_df["cancer_type"].unique().to_list())
-            
-            bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px"))
-            bar.add_xaxis(custom_age_order)
-            
-            for cancer in all_cancers:
-                cancer_data = []
-                cancer_subset = gender_df.filter(pl.col("cancer_type") == cancer)
-                for age_group in custom_age_order:
-                    val = cancer_subset.filter(pl.col("custom_age_group") == age_group)["proportion"].to_list()
-                    cancer_data.append(val[0] if val else 0)
-                
-                bar.add_yaxis(
-                    cancer,
-                    cancer_data,
-                    stack="stack1",
-                    label_opts=opts.LabelOpts(is_show=False),
-                    itemstyle_opts=opts.ItemStyleOpts(color=get_cancer_color(cancer))
-                )
-            
-            bar.set_global_opts(
-                title_opts=opts.TitleOpts(title=f"{prop_year}년 {gender_label} 연령별 암종 비중 (%)"),
-                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow", formatter="{a}: {c}%"),
-                legend_opts=opts.LegendOpts(pos_bottom="0%", orient="horizontal", type_="scroll"),
-                xaxis_opts=opts.AxisOpts(name="연령그룹"),
-                yaxis_opts=opts.AxisOpts(name="비중 (%)", min_=0, max_=100)
-            )
-            return bar
+        from pyecharts.charts import Pie
 
-        col_prop_m, col_prop_f = st.columns(2)
-        with col_prop_m:
-            st_pyecharts(create_proportion_chart(df_prop_agg, "남자"), height="520px", key=f"prop_m_{prop_year}")
-        with col_prop_f:
-            st_pyecharts(create_proportion_chart(df_prop_agg, "여자"), height="520px", key=f"prop_f_{prop_year}")
+        def create_donut_chart(df, gender_label, age_group):
+            # Filter data for specific gender and age group
+            subset = df.filter((pl.col("gender") == gender_label) & (pl.col("custom_age_group") == age_group))
+            
+            if subset.is_empty():
+                return None
+            
+            # Prepare data pairs for Pie chart
+            data_pairs = []
+            for row in subset.iter_rows(named=True):
+                data_pairs.append([row["cancer_type"], row["proportion"]])
+            
+            # Sort by proportion descending for better look
+            data_pairs = sorted(data_pairs, key=lambda x: x[1], reverse=True)
+            
+            pie = (
+                Pie(init_opts=opts.InitOpts(width="100%", height="250px"))
+                .add(
+                    series_name="",
+                    data_pair=data_pairs,
+                    radius=["40%", "70%"],
+                    label_opts=opts.LabelOpts(is_show=False),
+                )
+                .set_colors([get_cancer_color(p[0]) for p in data_pairs])
+                .set_global_opts(
+                    title_opts=opts.TitleOpts(
+                        title=f"{age_group}",
+                        pos_left="center",
+                        pos_bottom="0%",
+                        title_textstyle_opts=opts.TextStyleOpts(font_size=14)
+                    ),
+                    legend_opts=opts.LegendOpts(is_show=False),
+                    tooltip_opts=opts.TooltipOpts(trigger="item", formatter="{b}: {d}%")
+                )
+            )
+            return pie
+
+        # Render Male Donut Charts
+        st.write(f"#### 👨 {prop_year}년 남자 연령그룹별 암종 비중")
+        cols_m = st.columns(5)
+        for i, age in enumerate(custom_age_order):
+            with cols_m[i]:
+                chart = create_donut_chart(df_prop_agg, "남자", age)
+                if chart:
+                    st_pyecharts(chart, height="260px", key=f"donut_m_{age}_{prop_year}")
+                else:
+                    st.caption(f"{age} 데이터 없음")
         
-        st.info("💡 각 막대는 해당 연령대에서 발생한 전체 암 중 각 암종이 차지하는 비중을 나타냅니다.")
+        # Render Female Donut Charts
+        st.write(f"#### 👩 {prop_year}년 여자 연령그룹별 암종 비중")
+        cols_f = st.columns(5)
+        for i, age in enumerate(custom_age_order):
+            with cols_f[i]:
+                chart = create_donut_chart(df_prop_agg, "여자", age)
+                if chart:
+                    st_pyecharts(chart, height="260px", key=f"donut_f_{age}_{prop_year}")
+                else:
+                    st.caption(f"{age} 데이터 없음")
+        
+        st.info("💡 각 도넛 차트는 해당 연령대에서 각 암종이 차지하는 비중을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
 
         with st.expander("📝 연령별 암 발생 비중 상세 데이터 보기", expanded=False):
             # Create a pivot table for the user to see the actual proportions
