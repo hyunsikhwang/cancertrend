@@ -3,15 +3,23 @@ import httpx
 import asyncio
 import json
 import os
+import streamlit as st
+import plotly.express as px
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 
-# 환경 변수 로드
+# Page config
+st.set_page_config(page_title="Cancer Incidence Trend Analysis", layout="wide")
+
+# 환경 변수 로드 (로컬용)
 load_dotenv()
-API_KEY = os.getenv("KOSIS_API_KEY")
+
+# API 키 가져오기 (Streamlit Secrets 우선, 없으면 환경 변수)
+API_KEY = st.secrets.get("KOSIS_API_KEY") or os.getenv("KOSIS_API_KEY")
 
 if not API_KEY:
-    print("[ERROR] KOSIS_API_KEY not found in environment variables or .env file.")
+    st.error("KOSIS_API_KEY not found. Please set it in Streamlit Secrets or .env file.")
+    st.stop()
 
 def update_url_params(url, start_year, end_year):
     """URL의 startPrdDe와 endPrdDe 파라미터를 안전하게 업데이트하고 apiKey를 삽입합니다."""
@@ -32,7 +40,6 @@ async def fetch_api_batch(client, url_template, start_year, end_year):
         url = update_url_params(url_template, s_y, e_y)
         tasks.append(client.get(url, timeout=60.0))
     
-    print(f"Sending {len(tasks)} async requests...")
     responses = await asyncio.gather(*tasks)
     
     all_data = []
@@ -42,66 +49,34 @@ async def fetch_api_batch(client, url_template, start_year, end_year):
                 data = resp.json()
                 if isinstance(data, list):
                     all_data.extend(data)
-                else:
-                    print(f"[WARNING] Batch {i} returned non-list data.")
             except Exception as e:
-                print(f"[ERROR] Failed to parse JSON for batch {i}: {e}")
-        else:
-            print(f"[ERROR] Batch {i} failed with status {resp.status_code}")
-    
+                pass
     return all_data
 
 def normalize_age(age_str):
     """연령대 명칭을 정규화합니다. 85세 이상 세분화 항목을 '85+'로 통합합니다."""
     if not age_str: return ""
-    # 기본 정제
     cleaned = age_str.replace("세", "").replace(" ", "").replace("이상", "+")
-    # 85세 이상 통합 처리 (85-89, 90-94, 95-99, 100+ -> 85+)
     if cleaned in ["85-89", "90-94", "95-99", "100+"]:
         return "85+"
     return cleaned
 
-async def get_data_with_cache(cache_file, url_template, start_year, end_year, label):
-    """캐시된 파일이 있으면 로드하고, 없으면 API 호출 후 저장합니다."""
-    if os.path.exists(cache_file):
-        print(f"Loading {label} from cache: {cache_file}")
-        with open(cache_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    
-    print(f"No cache found for {label}. Fetching from API...")
-    async with httpx.AsyncClient() as client:
-        data = await fetch_api_batch(client, url_template, start_year, end_year)
-        
-    if data:
-        print(f"Saving {label} to cache: {cache_file}")
-        with open(cache_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False)
-            
-    return data
+@st.cache_data(show_spinner="Fetching data from API...")
+def get_processed_data():
+    """데이터 수집 및 정제 과정을 수행하고 캐싱합니다."""
+    return asyncio.run(_get_processed_data_async())
 
-async def main():
-    # URL 정의
+async def _get_processed_data_async():
     url_pop = f"https://kosis.kr/openapi/Param/statisticsParameterData.do?method=getList&apiKey={API_KEY}&itmId=T10+&objL1=1+&objL2=1+2+&objL3=040+050+070+100+120+130+150+160+180+190+210+230+260+280+310+330+340+360+380+410+430+440+&objL4=&objL5=&objL6=&objL7=&objL8=&format=json&jsonVD=Y&prdSe=Y&startPrdDe=1999&endPrdDe=2023&orgId=101&tblId=DT_1BPA001"
     url_cancer = f"https://kosis.kr/openapi/Param/statisticsParameterData.do?method=getList&apiKey={API_KEY}&itmId=16117ac000101+&objL1=ALL&objL2=11101SSB21+11101SSB22+&objL3=15117AC001102+15117AC001103+15117AC001104+15117AC001105+15117AC001106+15117AC001107+15117AC001108+15117AC001109+15117AC001110+15117AC001111+15117AC001112+15117AC001113+15117AC001114+15117AC001115+15117AC001116+15117AC001117+15117AC001118+15117AC001119+15117AC001120+&objL4=&objL5=&objL6=&objL7=&objL8=&format=json&jsonVD=Y&prdSe=Y&startPrdDe=1999&endPrdDe=2023&orgId=117&tblId=DT_117N_A0024"
 
-    # 1. 데이터 수집 (캐싱 적용)
-    # URL이 변경되었으므로 캐시를 무시하고 새로 가져오도록 처리하거나 캐시 파일을 삭제해야 함
-    # 여기서는 URL이 변경되었음을 명시적으로 알리기 위해 캐시 파일명을 변경하거나 삭제 권장
-    if os.path.exists("raw_pop_cache.json"):
-        pop_cached = await get_data_with_cache("raw_pop_cache.json", url_pop, 1999, 2023, "Population")
-        # 340 코드가 있는지 확인 (없으면 다시 가져오기)
-        if not any(d.get('C3') == '340' for d in pop_cached):
-            print("[INFO] 340 code missing in cache. Refreshing population data...")
-            os.remove("raw_pop_cache.json")
-    
-    pop_raw = await get_data_with_cache("raw_pop_cache.json", url_pop, 1999, 2023, "Population")
-    cancer_raw = await get_data_with_cache("raw_cancer_cache.json", url_cancer, 1999, 2023, "Cancer")
+    async with httpx.AsyncClient() as client:
+        pop_raw = await fetch_api_batch(client, url_pop, 1999, 2023)
+        cancer_raw = await fetch_api_batch(client, url_cancer, 1999, 2023)
 
     if not pop_raw or not cancer_raw:
-        return
+        return None
 
-    # 2. Polars 데이터 로드 및 정제
-    print("Processing data with Polars...")
     df_pop = pl.DataFrame(pop_raw)
     df_cancer = pl.DataFrame(cancer_raw)
 
@@ -114,9 +89,7 @@ async def main():
     ]).select(["year", "gender", "age_group", "population"])
 
     # 1999년 80+ 데이터 추산 로직
-    # 2000년의 80-84, 85+ 비율 계산
     pop_2000 = df_pop.filter(pl.col("year") == 2000)
-    
     dist_2000 = pop_2000.filter(pl.col("age_group").is_in(["80-84", "85+"])).group_by(["gender"]).agg([
         pl.col("population").filter(pl.col("age_group") == "80-84").sum().alias("pop_80_84"),
         pl.col("population").filter(pl.col("age_group") == "85+").sum().alias("pop_85_up"),
@@ -126,29 +99,20 @@ async def main():
         (pl.col("pop_85_up") / pl.col("total_80_plus")).alias("ratio_85_up")
     ])
 
-    # 1999년 80+ 데이터 가져오기
     pop_1999_80_plus = df_pop.filter((pl.col("year") == 1999) & (pl.col("age_group") == "80+"))
-    
     if len(pop_1999_80_plus) > 0:
-        print("Estimating 1999 population for 80-84 and 85+...")
-        # 1999년 80-84, 85+ 행 생성
         estimated_1999 = pop_1999_80_plus.join(dist_2000.select(["gender", "ratio_80_84", "ratio_85_up"]), on="gender")
-        
         estimated_80_84 = estimated_1999.with_columns([
             pl.lit("80-84").alias("age_group"),
             (pl.col("population") * pl.col("ratio_80_84")).alias("population")
         ]).select(["year", "gender", "age_group", "population"])
-        
         estimated_85_up = estimated_1999.with_columns([
             pl.lit("85+").alias("age_group"),
             (pl.col("population") * pl.col("ratio_85_up")).alias("population")
         ]).select(["year", "gender", "age_group", "population"])
-        
-        # 기존 1999년 80+ 행 제거 및 추산된 행 추가
         df_pop = df_pop.filter(~((pl.col("year") == 1999) & (pl.col("age_group") == "80+")))
         df_pop = pl.concat([df_pop, estimated_80_84, estimated_85_up])
 
-    # 85+ 통합을 위해 GroupBy Sum 수행 (이미 85+ 인 것들도 있으므로 보장)
     df_pop = df_pop.group_by(["year", "gender", "age_group"]).agg(pl.col("population").sum())
 
     # 암 데이터 정제
@@ -159,34 +123,77 @@ async def main():
         pl.col("C1_NM").alias("cancer_type"),
         pl.col("DT").cast(pl.Float64).alias("cases")
     ]).select(["year", "gender", "age_group", "cancer_type", "cases"])
-
     df_cancer = df_cancer.unique()
 
-    # 3. 조인
+    # 조인
     joined = df_cancer.join(df_pop, on=["year", "gender", "age_group"], how="left")
-
-    # 4. 미매칭 데이터 분석
-    missing_mask = pl.col("population").is_null()
-    missing_data = joined.filter(missing_mask).sort(["year", "gender", "age_group"])
     
-    if len(missing_data) > 0:
-        print(f"\n[WARNING] Found {len(missing_data)} records missing population data.")
-        missing_data.write_csv("missing_joins.csv")
-        print("Missing join details saved to 'missing_joins.csv'")
-        
-        # 원인 분석용 유니크 카테고리
-        summary = missing_data.select(["year", "age_group"]).unique().sort(["year", "age_group"])
-        print("\nSummary of missing age/year combinations:")
-        print(summary)
-
-    # 5. 최종 산출 (인구수가 있는 항목만)
-    final_df = joined.filter(~missing_mask).with_columns(
+    # 최종 산출
+    final_df = joined.filter(pl.col("population").is_not_null()).with_columns(
         ((pl.col("cases") / pl.col("population")) * 100000).round(2).alias("incidence_rate")
     ).sort(["year", "gender", "age_group", "cancer_type"])
+    
+    return final_df
 
-    print(f"\nFinal record count: {len(final_df)}")
-    final_df.write_csv("cancer_incidence_final.csv")
-    print("Final results saved to 'cancer_incidence_final.csv'")
+def main():
+    st.title("📊 Cancer Incidence Trend Analysis (1999-2023)")
+    st.markdown("KOSIS API 데이터를 활용하여 암 발생률 추이를 분석합니다.")
+
+    data = get_processed_data()
+
+    if data is None:
+        st.error("Failed to fetch or process data.")
+        return
+
+    # Sidebar Filters
+    st.sidebar.header("Filters")
+    
+    genders = data["gender"].unique().to_list()
+    selected_gender = st.sidebar.selectbox("Select Gender", genders)
+    
+    cancer_types = data["cancer_type"].unique().sort().to_list()
+    selected_cancer = st.sidebar.selectbox("Select Cancer Type", cancer_types, index=cancer_types.index("모든 암(C00-C96)") if "모든 암(C00-C96)" in cancer_types else 0)
+    
+    age_groups = data["age_group"].unique().sort().to_list()
+    selected_ages = st.sidebar.multiselect("Select Age Groups", age_groups, default=age_groups)
+
+    # Filter Data
+    filtered_df = data.filter(
+        (pl.col("gender") == selected_gender) &
+        (pl.col("cancer_type") == selected_cancer) &
+        (pl.col("age_group").is_in(selected_ages))
+    )
+
+    # Visualizations
+    st.subheader(f"📈 Trend: {selected_cancer} ({selected_gender})")
+    
+    if len(filtered_df) > 0:
+        # Chart 1: Incidence Rate over Years by Age Group
+        fig = px.line(
+            filtered_df.to_pandas(), 
+            x="year", 
+            y="incidence_rate", 
+            color="age_group",
+            title=f"Incidence Rate per 100,000 population",
+            labels={"incidence_rate": "Incidence Rate", "year": "Year", "age_group": "Age Group"}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Tabs for more details
+        tab1, tab2 = st.tabs(["Data Table", "Summary Stats"])
+        
+        with tab1:
+            st.dataframe(filtered_df.to_pandas(), use_container_width=True)
+            
+        with tab2:
+            summary = filtered_df.group_by("age_group").agg([
+                pl.col("incidence_rate").mean().alias("avg_rate"),
+                pl.col("incidence_rate").max().alias("max_rate"),
+                pl.col("cases").sum().alias("total_cases")
+            ]).sort("age_group")
+            st.dataframe(summary.to_pandas(), use_container_width=True)
+    else:
+        st.warning("No data matching the selected filters.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
