@@ -218,7 +218,8 @@ async def _get_processed_data_async():
     # 조인
     joined = df_cancer.join(df_pop, on=["year", "gender", "age_group"], how="left")
     
-    # 연령별 발생률 계산 (Population이 0인 경우 처리)
+    # 1. 연령별 데이터 계산
+    # API의 DT는 암발생자수(cases)로 간주하며, 발생률은 (발생자수 / 인구수) * 100,000으로 수동 계산합니다.
     age_seg_df = joined.filter(pl.col("population").is_not_null()).with_columns(
         (pl.when(pl.col("population") > 0)
          .then((pl.col("cases") / pl.col("population")) * 100000)
@@ -226,10 +227,10 @@ async def _get_processed_data_async():
         .round(2).alias("incidence_rate")
     )
     
-    # 전체 연령(Total) 합계 계산
+    # 2. 전체 연령(Total) 합계 및 발생률 재계산
     total_df = joined.filter(pl.col("population").is_not_null()).group_by(["year", "gender", "cancer_type"]).agg([
-        pl.col("cases").sum(),
-        pl.col("population").sum()
+        pl.col("cases").sum().alias("cases"),
+        pl.col("population").sum().alias("population")
     ]).with_columns([
         pl.lit("계(전체)").alias("age_group"),
         (pl.when(pl.col("population") > 0)
@@ -240,8 +241,8 @@ async def _get_processed_data_async():
     
     # 최종 결합
     final_df = pl.concat([
-        age_seg_df.select(["year", "gender", "age_group", "cancer_type", "cases", "incidence_rate"]),
-        total_df.select(["year", "gender", "age_group", "cancer_type", "cases", "incidence_rate"])
+        age_seg_df.select(["year", "gender", "age_group", "cancer_type", "cases", "incidence_rate", "population"]),
+        total_df.select(["year", "gender", "age_group", "cancer_type", "cases", "incidence_rate", "population"])
     ]).sort(["year", "gender", "age_group", "cancer_type"])
     
     return final_df
@@ -583,14 +584,17 @@ def main():
             pl.col("age_group").map_elements(map_to_custom_age_group, return_dtype=pl.String).alias("custom_age_group")
         ).filter(pl.col("custom_age_group").is_not_null())
         
-        # Aggregate by custom age group
-        df_prop_agg = df_prop.group_by(["gender", "custom_age_group", "cancer_type"]).agg(
-            pl.col("cases").sum()
+        # Aggregate by custom age group (First sum cases and population, then calculate rate)
+        df_prop_agg = df_prop.group_by(["gender", "custom_age_group", "cancer_type"]).agg([
+            pl.col("cases").sum().alias("cases_sum"),
+            pl.col("population").sum().alias("pop_sum")
+        ]).with_columns(
+            ((pl.col("cases_sum") / pl.col("pop_sum")) * 100000).round(2).alias("custom_incidence_rate")
         )
         
-        # Calculate proportion (%)
+        # Calculate proportion (%) based on custom incidence rates within each (gender, custom_age_group)
         df_prop_agg = df_prop_agg.with_columns(
-            (pl.col("cases") / pl.col("cases").over(["gender", "custom_age_group"]) * 100).round(1).alias("proportion")
+            (pl.col("custom_incidence_rate") / pl.col("custom_incidence_rate").over(["gender", "custom_age_group"]) * 100).round(1).alias("proportion")
         )
         
         custom_age_order = ["0-19세", "20-39세", "40-49세", "50-59세", "60세+"]
