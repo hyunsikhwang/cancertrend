@@ -295,34 +295,32 @@ def main():
         line_chart = Line(init_opts=opts.InitOpts(width="100%", height="650px"))
         line_chart.add_xaxis(xaxis_data=x_data)
         
-        # Add Male Series
+        # Add Male Series (Index 0)
         male_df = filtered_df.filter(pl.col("gender") == "남")
         if not male_df.is_empty():
             male_pivot = male_df.pivot(values="incidence_rate", index="year", on="age_group").sort("year")
-            # Ensure all X-axis points are present for each serie
             for i, age in enumerate(selected_ages):
                 if age in male_pivot.columns:
-                    # Map to X-axis
                     y_vals = []
                     male_dict = dict(zip(male_pivot["year"].to_list(), male_pivot[age].to_list()))
                     for y in years:
                         val = male_dict.get(y, 0)
-                        # Handle NaN/None explicitly for pyecharts
                         if val is None or (isinstance(val, float) and val != val):
                             val = 0
-                        y_vals.append(val)
+                        y_vals.append(float(val))
                     
                     line_chart.add_yaxis(
                         series_name=f"남 ({age})",
                         y_axis=y_vals,
                         is_smooth=True,
                         symbol_size=8,
+                        yaxis_index=0,
                         label_opts=opts.LabelOpts(is_show=False),
                         linestyle_opts=opts.LineStyleOpts(width=3, color=colors_male[i % len(colors_male)]),
                         itemstyle_opts=opts.ItemStyleOpts(color=colors_male[i % len(colors_male)])
                     )
         
-        # Add Female Series
+        # Add Female Series (Index 1 if Dual Axis, else Index 0)
         female_df = filtered_df.filter(pl.col("gender") == "여")
         if not female_df.is_empty():
             female_pivot = female_df.pivot(values="incidence_rate", index="year", on="age_group").sort("year")
@@ -332,10 +330,9 @@ def main():
                     female_dict = dict(zip(female_pivot["year"].to_list(), female_pivot[age].to_list()))
                     for y in years:
                         val = female_dict.get(y, 0)
-                        # Handle NaN/None explicitly for pyecharts
                         if val is None or (isinstance(val, float) and val != val):
                             val = 0
-                        y_vals.append(val)
+                        y_vals.append(float(val))
                         
                     line_chart.add_yaxis(
                         series_name=f"여 ({age})",
@@ -348,14 +345,15 @@ def main():
                         itemstyle_opts=opts.ItemStyleOpts(color=colors_female[i % len(colors_female)])
                     )
 
-        # Global Setup
+        # Axis Grid Setup
         yaxis_opts = [
             opts.AxisOpts(
                 name="남 발생률", 
                 type_="value", 
                 is_show=True,
                 axislabel_opts=opts.LabelOpts(formatter="{value}"),
-                splitline_opts=opts.SplitLineOpts(is_show=True)
+                splitline_opts=opts.SplitLineOpts(is_show=True),
+                is_scale=True
             )
         ]
         
@@ -366,32 +364,25 @@ def main():
                     type_="value", 
                     is_show=True,
                     axislabel_opts=opts.LabelOpts(formatter="{value}"),
-                    splitline_opts=opts.SplitLineOpts(is_show=False)
+                    splitline_opts=opts.SplitLineOpts(is_show=False),
+                    is_scale=True
                 )
             )
             st.info("💡 남/여 발생률 차이가 커서 우측 보조축을 사용합니다.")
-
-        # pyecharts set_global_opts expects a list or single object for yaxis_opts
-        # However, for dual axis, we usually use extend_axis if we set the first one in global_opts
-        # or we can pass a list of AxisOpts if the version supports it.
-        # To be safe, we'll use set_global_opts for common settings and ensure the first axis is visible.
 
         line_chart.set_global_opts(
             title_opts=opts.TitleOpts(title="Annual Incidence per 100k", subtitle="Solid: Male, Dashed: Female"),
             tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
             legend_opts=opts.LegendOpts(pos_top="10%", orient="horizontal"),
             xaxis_opts=opts.AxisOpts(name="연도", type_="category", boundary_gap=False),
-            yaxis_opts=yaxis_opts[0],
+            yaxis_opts=yaxis_opts,
             datazoom_opts=[
                 opts.DataZoomOpts(type_="slider", range_start=0, range_end=100),
                 opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
             ],
         )
         
-        if use_dual_axis:
-            line_chart.extend_axis(yaxis=yaxis_opts[1])
-
-        st_pyecharts(line_chart, height="680px", key="cancer_trend_dual_v6")
+        st_pyecharts(line_chart, height="680px", key="cancer_trend_dual_v_final")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
