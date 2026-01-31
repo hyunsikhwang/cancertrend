@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="Cancer Incidence Trend",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded" # 사이드바가 기본으로 열리도록 변경
 )
 
 # 환경 변수 로드 (로컬용)
@@ -50,7 +50,7 @@ st.markdown("""
         padding: 2rem 0;
         text-align: center;
         border-bottom: 1px solid #f0f0f0;
-        margin-bottom: 2.5rem;
+        margin-bottom: 1.5rem;
     }
 
     .hero-title {
@@ -67,7 +67,15 @@ st.markdown("""
         color: #666666;
     }
 
-    /* Sidebar Styling */
+    /* Filter Sidebar/Section */
+    .filter-section {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        border: 1px solid #eaeaea;
+    }
+
     [data-testid="stSidebar"] {
         background-color: #f8f9fa;
         border-right: 1px solid #eaeaea;
@@ -240,78 +248,109 @@ def main():
         st.warning("API 키가 유효한지 또는 KOSIS 서버가 정상인지 확인해주세요.")
         return
 
-    # Sidebar Filters
-    st.sidebar.markdown("### Search Filters")
+    # Filter Section - Move to main flow for visibility
+    st.markdown("### 🔍 Filter Configuration")
+    col1, col2 = st.columns([1, 2])
     
-    genders = data["gender"].unique().to_list()
-    selected_gender = st.sidebar.selectbox("Gender", genders)
+    with col1:
+        cancer_types = data["cancer_type"].unique().sort().to_list()
+        selected_cancer = st.selectbox(
+            "Cancer Type", 
+            cancer_types, 
+            index=cancer_types.index("모든 암(C00-C96)") if "모든 암(C00-C96)" in cancer_types else 0
+        )
     
-    cancer_types = data["cancer_type"].unique().sort().to_list()
-    selected_cancer = st.sidebar.selectbox("Cancer Type", cancer_types, index=cancer_types.index("모든 암(C00-C96)") if "모든 암(C00-C96)" in cancer_types else 0)
-    
-    age_groups = data["age_group"].unique().sort().to_list()
-    # '계(전체)'를 리스트의 맨 앞으로 이동
-    if "계(전체)" in age_groups:
-        age_groups.remove("계(전체)")
-        age_groups = ["계(전체)"] + age_groups
-        
-    selected_ages = st.sidebar.multiselect(
-        "Age Groups", 
-        age_groups, 
-        default=["계(전체)"] if "계(전체)" in age_groups else age_groups[:1]
-    )
+    with col2:
+        age_groups = data["age_group"].unique().sort().to_list()
+        if "계(전체)" in age_groups:
+            age_groups.remove("계(전체)")
+            age_groups = ["계(전체)"] + age_groups
+            
+        selected_ages = st.multiselect(
+            "Age Groups", 
+            age_groups, 
+            default=["계(전체)"] if "계(전체)" in age_groups else age_groups[:1]
+        )
 
-    # Filter Data
+    # Sidebar Filter as Fallback/Additional Info
+    st.sidebar.markdown("### Search Info")
+    st.sidebar.info("선택된 암 종류와 연령대에 대해 남/여 발생률 추이를 함께 비교합니다.")
+
+    # Filter Data for both Genders
     filtered_df = data.filter(
-        (pl.col("gender") == selected_gender) &
         (pl.col("cancer_type") == selected_cancer) &
         (pl.col("age_group").is_in(selected_ages))
     )
 
     if len(filtered_df) > 0:
-        # Chart Section
-        st.subheader(f"📈 {selected_cancer} Trend ({selected_gender})")
+        st.subheader(f"📈 {selected_cancer} Trend (Male vs Female)")
         
         # Prepare Data for Pyecharts
-        pivot_df = filtered_df.pivot(values="incidence_rate", index="year", on="age_group").sort("year")
-        # Ensure year is treated as string for X-axis stability
-        x_data = [str(y) for y in pivot_df["year"].to_list()]
+        # We need to handle multiple age groups and potentially primary/secondary Y-axis
+        x_data = sorted([str(y) for y in filtered_df["year"].unique().to_list()])
         
-        line_chart = (
-            Line()
-            .add_xaxis(xaxis_data=x_data)
-        )
+        line_chart = Line(init_opts=opts.InitOpts(width="100%", height="650px"))
+        line_chart.add_xaxis(xaxis_data=x_data)
         
-        colors = [
-            '#5470c6', '#91cc75', '#fac858', '#ee6666', 
-            '#73c0de', '#3ba272', '#fc8452', '#9a60b4',
-            '#ea7ccc', '#516b91'
-        ]
+        # Ranges for Y-axis decision
+        max_male = filtered_df.filter(pl.col("gender") == "남")["incidence_rate"].max() or 0
+        max_female = filtered_df.filter(pl.col("gender") == "여")["incidence_rate"].max() or 0
         
-        age_cols = [c for c in pivot_df.columns if c != "year"]
-        for i, age_group in enumerate(age_cols):
-            # Fill None values with 0 for safety in chart
-            y_data = pivot_df[age_group].fill_null(0).to_list()
-            line_chart.add_yaxis(
-                series_name=age_group,
-                y_axis=y_data,
-                is_smooth=True,
-                symbol_size=8,
-                label_opts=opts.LabelOpts(is_show=False),
-                linestyle_opts=opts.LineStyleOpts(width=3, color=colors[i % len(colors)]),
-                itemstyle_opts=opts.ItemStyleOpts(color=colors[i % len(colors)])
-            )
-            
+        # Use dual axis if ranges differ significantly (more than 2.5x)
+        range_diff = max(max_male, max_female) / min(max_male, max_female) if min(max_male, max_female) > 0 else 0
+        use_dual_axis = range_diff > 2.5
+        
+        # Color Palette
+        colors_male = ['#5470c6', '#73c0de', '#3ba272', '#516b91', '#002c53']
+        colors_female = ['#ee6666', '#fac858', '#fc8452', '#ea7ccc', '#9a60b4']
+        
+        # Add Male Series
+        male_df = filtered_df.filter(pl.col("gender") == "남").pivot(values="incidence_rate", index="year", on="age_group").sort("year")
+        for i, age in enumerate(selected_ages):
+            if age in male_df.columns:
+                line_chart.add_yaxis(
+                    series_name=f"남 ({age})",
+                    y_axis=male_df[age].fill_null(0).to_list(),
+                    is_smooth=True,
+                    symbol_size=8,
+                    label_opts=opts.LabelOpts(is_show=False),
+                    linestyle_opts=opts.LineStyleOpts(width=3, color=colors_male[i % len(colors_male)]),
+                    itemstyle_opts=opts.ItemStyleOpts(color=colors_male[i % len(colors_male)])
+                )
+        
+        # Add Female Series
+        female_df = filtered_df.filter(pl.col("gender") == "여").pivot(values="incidence_rate", index="year", on="age_group").sort("year")
+        for i, age in enumerate(selected_ages):
+            if age in female_df.columns:
+                line_chart.add_yaxis(
+                    series_name=f"여 ({age})",
+                    y_axis=female_df[age].fill_null(0).to_list(),
+                    is_smooth=True,
+                    symbol_size=8,
+                    yaxis_index=1 if use_dual_axis else 0,
+                    label_opts=opts.LabelOpts(is_show=False),
+                    linestyle_opts=opts.LineStyleOpts(width=3, color=colors_female[i % len(colors_female)], type_="dashed"),
+                    itemstyle_opts=opts.ItemStyleOpts(color=colors_female[i % len(colors_female)])
+                )
+
+        yaxis_opts = [opts.AxisOpts(name="남 발생률", type_="value", axislabel_opts=opts.LabelOpts(formatter="{value}"))]
+        if use_dual_axis:
+            yaxis_opts.append(opts.AxisOpts(name="여 발생률", type_="value", axislabel_opts=opts.LabelOpts(formatter="{value}")))
+            st.info("💡 남/여 발생률 수치 차이가 커서 보조축(오른쪽)을 사용하여 표시합니다.")
+        
         line_chart.set_global_opts(
-            title_opts=opts.TitleOpts(title="Incidence Rate per 100,000 population", subtitle="Based on selected filters"),
+            title_opts=opts.TitleOpts(title="남/여 암 발생률 추이 비교", subtitle="실선: 남성, 점선: 여성"),
             tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
-            legend_opts=opts.LegendOpts(pos_top="5%", orient="horizontal"),
-            xaxis_opts=opts.AxisOpts(name="Year", type_="category", boundary_gap=False),
-            yaxis_opts=opts.AxisOpts(name="Rate"),
+            legend_opts=opts.LegendOpts(pos_top="10%", orient="horizontal"),
+            xaxis_opts=opts.AxisOpts(name="연도", type_="category", boundary_gap=False),
+            yaxis_opts=yaxis_opts[0] if not use_dual_axis else None,
             datazoom_opts=[opts.DataZoomOpts(type_="inside")],
         )
         
-        st_pyecharts(line_chart, height="600px", key="cancer_trend_chart_v3")
+        if use_dual_axis:
+            line_chart.extend_axis(yaxis=yaxis_opts[1])
+
+        st_pyecharts(line_chart, height="650px", key="cancer_trend_dual_v1")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -322,11 +361,11 @@ def main():
             st.dataframe(filtered_df.to_pandas(), use_container_width=True)
             
         with tab2:
-            summary = filtered_df.group_by("age_group").agg([
-                pl.col("incidence_rate").mean().alias("Avg Rate"),
+            summary = filtered_df.group_by(["gender", "age_group"]).agg([
+                pl.col("incidence_rate").mean().alias("Mean Rate"),
                 pl.col("incidence_rate").max().alias("Max Rate"),
                 pl.col("cases").sum().alias("Total Cases")
-            ]).sort("age_group")
+            ]).sort(["gender", "age_group"])
             st.dataframe(summary.to_pandas(), use_container_width=True)
     else:
         st.warning("No data matching the selected filters.")
