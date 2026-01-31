@@ -5,7 +5,7 @@ import json
 import os
 import streamlit as st
 from pyecharts import options as opts
-from pyecharts.charts import Line
+from pyecharts.charts import Line, Bar
 from streamlit_echarts import st_pyecharts
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
@@ -378,6 +378,53 @@ def main():
         )
         
         st_pyecharts(line_chart, height="680px", key="chart_merged_v_final")
+
+        # New Section: Top 10 Cancers by Gender
+        st.markdown("<br><hr>", unsafe_allow_html=True)
+        latest_year = data["year"].max()
+        st.subheader(f"🏆 Top 10 Cancers by Incidence Rate ({latest_year})")
+        
+        # Prepare ranking data
+        ranking_df = data.filter(
+            (pl.col("year") == latest_year) & 
+            (pl.col("age_group") == "계(전체)") &
+            (pl.col("cancer_type") != "모든 암(C00-C96)")
+        )
+
+        def create_ranking_chart(df, gender_label, color):
+            # Sort Top 10
+            top10 = df.filter(pl.col("gender") == gender_label).sort("incidence_rate", descending=True).head(10)
+            # For Pyecharts horizontal bar, reverse to show rank 1 at the top
+            top10 = top10.reverse()
+            
+            c_names = top10["cancer_type"].to_list()
+            c_rates = [round(float(x), 1) for x in top10["incidence_rate"].to_list()]
+            
+            bar = Bar(init_opts=opts.InitOpts(width="100%", height="450px"))
+            bar.add_xaxis(c_names)
+            bar.add_yaxis(
+                "발생률", 
+                c_rates, 
+                label_opts=opts.LabelOpts(position="right"),
+                itemstyle_opts=opts.ItemStyleOpts(color=color)
+            )
+            bar.reversal_axis()
+            bar.set_global_opts(
+                title_opts=opts.TitleOpts(title=f"{gender_label} 암 발생 순위"),
+                xaxis_opts=opts.AxisOpts(name="발생률", is_show=True),
+                yaxis_opts=opts.AxisOpts(name="", axislabel_opts=opts.LabelOpts(font_size=11)),
+                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow")
+            )
+            return bar
+
+        col_rank_m, col_rank_f = st.columns(2)
+        with col_rank_m:
+            bar_m = create_ranking_chart(ranking_df, "남자", "#5470c6")
+            st_pyecharts(bar_m, height="480px", key="rank_male_v1")
+        
+        with col_rank_f:
+            bar_f = create_ranking_chart(ranking_df, "여자", "#ee6666")
+            st_pyecharts(bar_f, height="480px", key="rank_female_v1")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
