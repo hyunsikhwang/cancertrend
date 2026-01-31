@@ -432,7 +432,7 @@ def main():
                     axislabel_opts=opts.LabelOpts(font_size=11, margin=15)
                 ),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
-                grid_opts=opts.GridOpts(left="35%", right="10%")
+                grid_opts=opts.GridOpts(pos_left="35%", pos_right="10%")
             )
             return bar
 
