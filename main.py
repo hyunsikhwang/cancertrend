@@ -138,8 +138,8 @@ def normalize_age(age_str):
     return cleaned
 
 @st.cache_data(show_spinner="Fetching data from API...")
-def get_processed_data():
-    """데이터 수집 및 정제 과정을 수행하고 캐싱합니다."""
+def get_processed_data_v2():
+    """데이터 수집 및 정제 과정을 수행하고 캐싱합니다. (v2: 인구수 데이터 포함)"""
     return asyncio.run(_get_processed_data_async())
 
 def map_to_custom_age_group(age):
@@ -263,7 +263,7 @@ def main():
         return
 
     try:
-        data = get_processed_data()
+        data = get_processed_data_v2()
     except Exception as e:
         st.error(f"❌ **Data Processing Error:** {e}")
         return
@@ -583,6 +583,12 @@ def main():
         ).with_columns(
             pl.col("age_group").map_elements(map_to_custom_age_group, return_dtype=pl.String).alias("custom_age_group")
         ).filter(pl.col("custom_age_group").is_not_null())
+        
+        # Ensure population column exists (defensive)
+        if "population" not in df_prop.columns:
+            st.error("데이터에 'population' 컬럼이 누락되었습니다. 캐시를 새로고침합니다.")
+            st.cache_data.clear()
+            st.rerun()
         
         # Aggregate by custom age group (First sum cases and population, then calculate rate)
         df_prop_agg = df_prop.group_by(["gender", "custom_age_group", "cancer_type"]).agg([
