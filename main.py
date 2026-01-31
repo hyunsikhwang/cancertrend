@@ -141,6 +141,20 @@ def get_processed_data():
     """데이터 수집 및 정제 과정을 수행하고 캐싱합니다."""
     return asyncio.run(_get_processed_data_async())
 
+def map_to_custom_age_group(age):
+    """정규화된 연령대를 요청된 5개 그룹으로 매핑합니다."""
+    if age in ["0-4", "5-9", "10-14", "15-19"]:
+        return "0-19세"
+    elif age in ["20-24", "25-29", "30-34", "35-39"]:
+        return "20-39세"
+    elif age in ["40-44", "45-49"]:
+        return "40-49세"
+    elif age in ["50-54", "55-59"]:
+        return "50-59세"
+    elif age in ["60-64", "65-69", "70-74", "75-79", "80-84", "85+"]:
+        return "60세+"
+    return None
+
 async def _get_processed_data_async():
     url_pop = f"https://kosis.kr/openapi/Param/statisticsParameterData.do?method=getList&apiKey={API_KEY}&itmId=T10+&objL1=1+&objL2=1+2+&objL3=040+050+070+100+120+130+150+160+180+190+210+230+260+280+310+330+340+360+380+410+430+440+&objL4=&objL5=&objL6=&objL7=&objL8=&format=json&jsonVD=Y&prdSe=Y&startPrdDe=1999&endPrdDe=2023&orgId=101&tblId=DT_1BPA001"
     url_cancer = f"https://kosis.kr/openapi/Param/statisticsParameterData.do?method=getList&apiKey={API_KEY}&itmId=16117ac000101+&objL1=ALL&objL2=11101SSB21+11101SSB22+&objL3=15117AC001102+15117AC001103+15117AC001104+15117AC001105+15117AC001106+15117AC001107+15117AC001108+15117AC001109+15117AC001110+15117AC001111+15117AC001112+15117AC001113+15117AC001114+15117AC001115+15117AC001116+15117AC001117+15117AC001118+15117AC001119+15117AC001120+&objL4=&objL5=&objL6=&objL7=&objL8=&format=json&jsonVD=Y&prdSe=Y&startPrdDe=1999&endPrdDe=2023&orgId=117&tblId=DT_117N_A0024"
@@ -543,6 +557,83 @@ def main():
                 st_pyecharts(create_race_chart(data, "남자"), height="550px", key="race_male")
             with col_race_f:
                 st_pyecharts(create_race_chart(data, "여자"), height="550px", key="race_female")
+
+        # New Section: Incidence Proportion by Age Group
+        st.markdown("<br><hr>", unsafe_allow_html=True)
+        col_icon3, col_text3 = st.columns([1, 15])
+        with col_icon3:
+            st.image("chart_icon.png", width=40)
+        with col_text3:
+            st.subheader("Cancer Incidence Proportion by Age Group")
+        
+        prop_year = st.select_slider(
+            "분석 연도 선택 (비중 차트)",
+            options=all_years,
+            value=max(all_years),
+            key="prop_year_slider"
+        )
+        
+        # Data transformation for Proportion Chart
+        df_prop = data.filter(
+            (pl.col("year") == prop_year) & 
+            (pl.col("age_group") != "계(전체)") &
+            (~pl.col("cancer_type").str.contains("모든 ?암"))
+        ).with_columns(
+            pl.col("age_group").map_elements(map_to_custom_age_group, return_dtype=pl.String).alias("custom_age_group")
+        ).filter(pl.col("custom_age_group").is_not_null())
+        
+        # Aggregate by custom age group
+        df_prop_agg = df_prop.group_by(["gender", "custom_age_group", "cancer_type"]).agg(
+            pl.col("cases").sum()
+        )
+        
+        # Calculate proportion (%)
+        df_prop_agg = df_prop_agg.with_columns(
+            (pl.col("cases") / pl.col("cases").over(["gender", "custom_age_group"]) * 100).round(1).alias("proportion")
+        )
+        
+        custom_age_order = ["0-19세", "20-39세", "40-49세", "50-59세", "60세+"]
+        
+        def create_proportion_chart(df, gender_label):
+            gender_df = df.filter(pl.col("gender") == gender_label)
+            
+            # Get all cancer types present for the legend
+            all_cancers = sorted(gender_df["cancer_type"].unique().to_list())
+            
+            bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px"))
+            bar.add_xaxis(custom_age_order)
+            
+            for cancer in all_cancers:
+                cancer_data = []
+                cancer_subset = gender_df.filter(pl.col("cancer_type") == cancer)
+                for age_group in custom_age_order:
+                    val = cancer_subset.filter(pl.col("custom_age_group") == age_group)["proportion"].to_list()
+                    cancer_data.append(val[0] if val else 0)
+                
+                bar.add_yaxis(
+                    cancer,
+                    cancer_data,
+                    stack="stack1",
+                    label_opts=opts.LabelOpts(is_show=False),
+                    itemstyle_opts=opts.ItemStyleOpts(color=get_cancer_color(cancer))
+                )
+            
+            bar.set_global_opts(
+                title_opts=opts.TitleOpts(title=f"{prop_year}년 {gender_label} 연령별 암종 비중 (%)"),
+                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow", formatter="{a}: {c}%"),
+                legend_opts=opts.LegendOpts(is_show=False), # Hide legend for clarity, or use small font
+                xaxis_opts=opts.AxisOpts(name="연령그룹"),
+                yaxis_opts=opts.AxisOpts(name="비중 (%)", min_=0, max_=100)
+            )
+            return bar
+
+        col_prop_m, col_prop_f = st.columns(2)
+        with col_prop_m:
+            st_pyecharts(create_proportion_chart(df_prop_agg, "남자"), height="520px", key=f"prop_m_{prop_year}")
+        with col_prop_f:
+            st_pyecharts(create_proportion_chart(df_prop_agg, "여자"), height="520px", key=f"prop_f_{prop_year}")
+        
+        st.info("💡 각 막대는 해당 연령대에서 발생한 전체 암 중 각 암종이 차지하는 비중을 나타냅니다.")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
