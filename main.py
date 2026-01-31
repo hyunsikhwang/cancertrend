@@ -5,7 +5,7 @@ import json
 import os
 import streamlit as st
 from pyecharts import options as opts
-from pyecharts.charts import Line, Bar, Grid
+from pyecharts.charts import Line, Bar, Grid, Timeline
 from streamlit_echarts import st_pyecharts
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
@@ -388,65 +388,114 @@ def main():
 
         # New Section: Top 10 Cancers by Gender
         st.markdown("<br><hr>", unsafe_allow_html=True)
-        st.subheader("🏆 Top 10 Cancers by Incidence Rate")
+        st.subheader("🏆 Top 10 Cancers Ranking")
         
-        # Year selection for ranking
+        mode = st.radio("보기 모드 선택", ["정적 분석 (연도 선택)", "애니메이션 분석 (Bar Chart Race)"], horizontal=True)
+        
         all_years = sorted(data["year"].unique().to_list())
-        ranking_year = st.select_slider(
-            "분석 연도 선택",
-            options=all_years,
-            value=max(all_years),
-            key="ranking_year_slider"
-        )
         
-        # Prepare ranking data
-        ranking_df = data.filter(
-            (pl.col("year") == ranking_year) & 
-            (pl.col("age_group") == "계(전체)") &
-            (~pl.col("cancer_type").str.contains("모든 ?암"))
-        )
-
-        def create_ranking_chart(df, gender_label, color):
-            # Sort Top 10
-            top10 = df.filter(pl.col("gender") == gender_label).sort("incidence_rate", descending=True).head(10)
-            # For Pyecharts horizontal bar, reverse to show rank 1 at the top
-            top10 = top10.reverse()
-            
-            c_names = top10["cancer_type"].to_list()
-            c_rates = [round(float(x), 1) for x in top10["incidence_rate"].to_list()]
-            
-            bar = Bar(init_opts=opts.InitOpts(width="100%", height="450px"))
-            bar.add_xaxis(c_names)
-            bar.add_yaxis(
-                "발생률", 
-                c_rates, 
-                label_opts=opts.LabelOpts(position="right"),
-                itemstyle_opts=opts.ItemStyleOpts(color=color)
-            )
-            bar.reversal_axis()
-            bar.set_global_opts(
-                title_opts=opts.TitleOpts(title=f"{gender_label} 암 발생 순위"),
-                xaxis_opts=opts.AxisOpts(name="발생률", is_show=True),
-                yaxis_opts=opts.AxisOpts(
-                    name="", 
-                    axislabel_opts=opts.LabelOpts(font_size=11, margin=15)
-                ),
-                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow")
+        if mode == "정적 분석 (연도 선택)":
+            ranking_year = st.select_slider(
+                "분석 연도 선택",
+                options=all_years,
+                value=max(all_years),
+                key="ranking_year_slider"
             )
             
-            # Wrap in Grid to set margins
-            grid = Grid(init_opts=opts.InitOpts(width="100%", height="480px"))
-            grid.add(bar, grid_opts=opts.GridOpts(pos_left="35%", pos_right="10%"))
-            return grid
+            ranking_df = data.filter(
+                (pl.col("year") == ranking_year) & 
+                (pl.col("age_group") == "계(전체)") &
+                (~pl.col("cancer_type").str.contains("모든 ?암"))
+            )
 
-        col_rank_m, col_rank_f = st.columns(2)
-        with col_rank_m:
-            bar_m = create_ranking_chart(ranking_df, "남자", "#5470c6")
-            st_pyecharts(bar_m, height="480px", key=f"rank_male_{ranking_year}")
-        
-        with col_rank_f:
-            bar_f = create_ranking_chart(ranking_df, "여자", "#ee6666")
-            st_pyecharts(bar_f, height="480px", key=f"rank_female_{ranking_year}")
+            def create_ranking_chart(df, gender_label, color):
+                # Sort Top 10
+                top10 = df.filter(pl.col("gender") == gender_label).sort("incidence_rate", descending=True).head(10)
+                top10 = top10.reverse()
+                
+                c_names = top10["cancer_type"].to_list()
+                c_rates = [round(float(x), 1) for x in top10["incidence_rate"].to_list()]
+                
+                bar = Bar(init_opts=opts.InitOpts(width="100%", height="450px"))
+                bar.add_xaxis(c_names)
+                bar.add_yaxis(
+                    "발생률", 
+                    c_rates, 
+                    label_opts=opts.LabelOpts(position="right"),
+                    itemstyle_opts=opts.ItemStyleOpts(color=color)
+                )
+                bar.reversal_axis()
+                bar.set_global_opts(
+                    title_opts=opts.TitleOpts(title=f"{ranking_year}년 {gender_label} 암 발생 순위"),
+                    xaxis_opts=opts.AxisOpts(name="발생률", is_show=True),
+                    yaxis_opts=opts.AxisOpts(
+                        name="", 
+                        axislabel_opts=opts.LabelOpts(font_size=11, margin=15)
+                    ),
+                    tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow")
+                )
+                
+                grid = Grid(init_opts=opts.InitOpts(width="100%", height="480px"))
+                grid.add(bar, grid_opts=opts.GridOpts(pos_left="35%", pos_right="10%"))
+                return grid
+
+            col_rank_m, col_rank_f = st.columns(2)
+            with col_rank_m:
+                st_pyecharts(create_ranking_chart(ranking_df, "남자", "#5470c6"), height="480px", key=f"rank_m_{ranking_year}")
+            with col_rank_f:
+                st_pyecharts(create_ranking_chart(ranking_df, "여자", "#ee6666"), height="480px", key=f"rank_f_{ranking_year}")
+
+        else:
+            # Bar Chart Race using Timeline
+            st.info("💡 하단의 플레이 버튼(▶)을 누르면 1999년부터 2023년까지의 변화를 보실 수 있습니다.")
+            
+            def create_race_chart(df, gender_label, color):
+                tl = Timeline(init_opts=opts.InitOpts(width="100%", height="520px"))
+                tl.add_schema(is_auto_play=False, play_interval=800, is_loop_play=False, pos_bottom="-5px")
+                
+                for year in all_years:
+                    year_df = df.filter(
+                        (pl.col("year") == year) & 
+                        (pl.col("age_group") == "계(전체)") &
+                        (~pl.col("cancer_type").str.contains("모든 ?암")) &
+                        (pl.col("gender") == gender_label)
+                    ).sort("incidence_rate", descending=True).head(10).reverse()
+                    
+                    if not year_df.is_empty():
+                        c_names = year_df["cancer_type"].to_list()
+                        c_rates = [round(float(x), 1) for x in year_df["incidence_rate"].to_list()]
+                        
+                        bar = (
+                            Bar()
+                            .add_xaxis(c_names)
+                            .add_yaxis(
+                                "발생률", 
+                                c_rates, 
+                                label_opts=opts.LabelOpts(position="right"),
+                                itemstyle_opts=opts.ItemStyleOpts(color=color)
+                            )
+                            .reversal_axis()
+                            .set_global_opts(
+                                title_opts=opts.TitleOpts(title=f"{year}년 {gender_label} 암 발생 순위"),
+                                xaxis_opts=opts.AxisOpts(name="발생률", is_show=True),
+                                yaxis_opts=opts.AxisOpts(
+                                    name="", 
+                                    axislabel_opts=opts.LabelOpts(font_size=11, margin=15)
+                                ),
+                                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow")
+                            )
+                        )
+                        # Wrap each year's bar in grid for margin
+                        grid = Grid()
+                        grid.add(bar, grid_opts=opts.GridOpts(pos_left="35%", pos_right="10%"))
+                        tl.add(grid, f"{year}년")
+                return tl
+
+            col_race_m, col_race_f = st.columns(2)
+            with col_race_m:
+                st_pyecharts(create_race_chart(data, "남자", "#5470c6"), height="550px", key="race_male")
+            with col_race_f:
+                st_pyecharts(create_race_chart(data, "여자", "#ee6666"), height="550px", key="race_female")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
