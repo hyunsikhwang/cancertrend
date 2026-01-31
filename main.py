@@ -233,7 +233,7 @@ async def _get_processed_data_async():
 
 def main():
     # Hero Section
-    st.image("logo.png", width=120)
+    st.image("app_logo.png", width=120)
     st.markdown("""
     <div class="hero-container" style="text-align: left; padding: 1rem 0;">
         <div class="hero-title" style="font-size: 2.2rem; margin-top: -10px;">Cancer Incidence Trend</div>
