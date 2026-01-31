@@ -603,6 +603,8 @@ def main():
             (pl.col("custom_incidence_rate") / pl.col("custom_incidence_rate").sum().over(["gender", "custom_age_group"]) * 100).round(1).alias("proportion")
         )
         
+        custom_age_order = ["0-19세", "20-39세", "40-49세", "50-59세", "60세+"]
+        
         from pyecharts.charts import Pie
         
         def create_stacked_bar_chart(df, gender_label):
