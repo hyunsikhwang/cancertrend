@@ -675,7 +675,7 @@ def main():
                     label_opts=opts.LabelOpts(
                         is_show=True, 
                         position="inside",
-                        formatter=JsCode("function(params) { return params.value > 0 ? (params.seriesName.indexOf('(') > -1 ? params.seriesName.replace('(', '\\n(') : params.seriesName) : ''; }"),
+                        formatter=JsCode("function(params) { if (params.value > 0) { return params.seriesName.replace('(', '\\n('); } else { return ''; } }"),
                         font_size=10,
                         color="#fff"
                     ),
@@ -690,7 +690,7 @@ def main():
                 label_opts=opts.LabelOpts(
                     is_show=True, 
                     position="inside",
-                    formatter=JsCode("function(params) { return params.value > 0 ? (params.seriesName.indexOf('(') > -1 ? params.seriesName.replace('(', '\\n(') : params.seriesName) : ''; }"),
+                    formatter=JsCode("function(params) { if (params.value > 0) { return params.seriesName.replace('(', '\\n('); } else { return ''; } }"),
                     font_size=10,
                     color="#fff"
                 ),
