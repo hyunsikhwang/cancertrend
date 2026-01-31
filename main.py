@@ -427,8 +427,12 @@ def main():
             bar.set_global_opts(
                 title_opts=opts.TitleOpts(title=f"{gender_label} 암 발생 순위"),
                 xaxis_opts=opts.AxisOpts(name="발생률", is_show=True),
-                yaxis_opts=opts.AxisOpts(name="", axislabel_opts=opts.LabelOpts(font_size=11)),
-                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow")
+                yaxis_opts=opts.AxisOpts(
+                    name="", 
+                    axislabel_opts=opts.LabelOpts(font_size=11, margin=15)
+                ),
+                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
+                grid_opts=opts.GridOpts(left="35%", right="10%")
             )
             return bar
 
