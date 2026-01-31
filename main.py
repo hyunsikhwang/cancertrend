@@ -319,18 +319,18 @@ def main():
         col_left, col_right = st.columns(2)
         
         with col_left:
-            male_df = filtered_df.filter(pl.col("gender") == "남")
+            male_df = filtered_df.filter(pl.col("gender") == "남자")
             if not male_df.is_empty():
                 chart_m = create_chart(male_df, "남성", colors_male)
-                st_pyecharts(chart_m, height="550px", key="chart_male_v1")
+                st_pyecharts(chart_m, height="550px", key="chart_male_v2")
             else:
                 st.info("남성 데이터가 없습니다.")
 
         with col_right:
-            female_df = filtered_df.filter(pl.col("gender") == "여")
+            female_df = filtered_df.filter(pl.col("gender") == "여자")
             if not female_df.is_empty():
                 chart_f = create_chart(female_df, "여성", colors_female)
-                st_pyecharts(chart_f, height="550px", key="chart_female_v1")
+                st_pyecharts(chart_f, height="550px", key="chart_female_v2")
             else:
                 st.info("여성 데이터가 없습니다.")
 
