@@ -24,9 +24,30 @@ load_dotenv()
 # API 키 가져오기 (Streamlit Secrets 우선, 없으면 환경 변수)
 API_KEY = st.secrets.get("KOSIS_API_KEY") or os.getenv("KOSIS_API_KEY")
 
-if not API_KEY:
-    st.error("KOSIS_API_KEY not found. Please set it in Streamlit Secrets or .env file.")
-    st.stop()
+def main():
+    # Hero Section
+    st.markdown("""
+    <div class="hero-container">
+        <div class="hero-title">📊 Cancer Incidence Trend</div>
+        <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not API_KEY:
+        st.error("🔑 **KOSIS_API_KEY not found.**")
+        st.info("Streamlit Cloud의 App Settings > Secrets에 `KOSIS_API_KEY = 'your_key_here'`를 추가해주세요.")
+        return
+
+    try:
+        data = get_processed_data()
+    except Exception as e:
+        st.error(f"❌ **Data Processing Error:** {e}")
+        return
+
+    if data is None or len(data) == 0:
+        st.error("📡 **Failed to fetch data from KOSIS API.**")
+        st.warning("API 키가 유효한지 또는 KOSIS 서버가 정상인지 확인해주세요.")
+        return
 
 # Custom CSS for Value Horizon Look & Feel
 st.markdown("""
@@ -219,20 +240,6 @@ async def _get_processed_data_async():
     
     return final_df
 
-def main():
-    # Hero Section
-    st.markdown("""
-    <div class="hero-container">
-        <div class="hero-title">📊 Cancer Incidence Trend</div>
-        <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    data = get_processed_data()
-
-    if data is None:
-        st.error("Failed to fetch or process data.")
-        return
 
     # Sidebar Filters
     st.sidebar.markdown("### Search Filters")
@@ -268,10 +275,11 @@ def main():
         
         # Prepare Data for Pyecharts
         pivot_df = filtered_df.pivot(values="incidence_rate", index="year", on="age_group").sort("year")
-        x_data = pivot_df["year"].to_list()
+        # Ensure year is treated as string for X-axis stability
+        x_data = [str(y) for y in pivot_df["year"].to_list()]
         
         line_chart = (
-            Line(init_opts=opts.InitOpts(width="100%", height="600px"))
+            Line()
             .add_xaxis(xaxis_data=x_data)
         )
         
@@ -283,7 +291,8 @@ def main():
         
         age_cols = [c for c in pivot_df.columns if c != "year"]
         for i, age_group in enumerate(age_cols):
-            y_data = pivot_df[age_group].to_list()
+            # Fill None values with 0 for safety in chart
+            y_data = pivot_df[age_group].fill_null(0).to_list()
             line_chart.add_yaxis(
                 series_name=age_group,
                 y_axis=y_data,
@@ -303,7 +312,7 @@ def main():
             datazoom_opts=[opts.DataZoomOpts(type_="inside")],
         )
         
-        st_pyecharts(line_chart, height="600px", key="cancer_trend_chart")
+        st_pyecharts(line_chart, height="600px", key="cancer_trend_chart_v2")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
