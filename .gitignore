@@ -130,6 +130,10 @@ __pypackages__/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid
+.env
+raw_*_cache.json
+cancer_incidence_*.csv
+missing_joins.csv
 
 # SageMath parsed files
 *.sage.py
