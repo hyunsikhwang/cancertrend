@@ -243,10 +243,17 @@ def main():
     
     with col1:
         cancer_types = data["cancer_type"].unique().sort().to_list()
+        # Find default index for "모든 암"
+        default_idx = 0
+        for i, ct in enumerate(cancer_types):
+            if "모든" in ct and "암" in ct and "C00-C96" in ct:
+                default_idx = i
+                break
+        
         selected_cancer = st.selectbox(
             "Cancer Type", 
             cancer_types, 
-            index=cancer_types.index("모든 암(C00-C96)") if "모든 암(C00-C96)" in cancer_types else 0
+            index=default_idx
         )
     
     with col2:
@@ -396,7 +403,7 @@ def main():
         ranking_df = data.filter(
             (pl.col("year") == ranking_year) & 
             (pl.col("age_group") == "계(전체)") &
-            (~pl.col("cancer_type").str.starts_with("모든 암(C00-C96)"))
+            (~pl.col("cancer_type").str.contains("모든 ?암"))
         )
 
         def create_ranking_chart(df, gender_label, color):
