@@ -396,7 +396,7 @@ def main():
         ranking_df = data.filter(
             (pl.col("year") == ranking_year) & 
             (pl.col("age_group") == "계(전체)") &
-            (~pl.col("cancer_type").str.starts_with("모든 암"))
+            (~pl.col("cancer_type").str.starts_with("모든 암(C00-C96)"))
         )
 
         def create_ranking_chart(df, gender_label, color):
