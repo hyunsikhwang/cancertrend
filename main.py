@@ -131,7 +131,8 @@ async def fetch_api_batch(client, url_template, start_year, end_year):
 def normalize_age(age_str):
     """연령대 명칭을 정규화합니다. 85세 이상 세분화 항목을 '85+'로 통합합니다."""
     if not age_str: return ""
-    cleaned = age_str.replace("세", "").replace(" ", "").replace("이상", "+")
+    # Standardize separator and remove noise
+    cleaned = age_str.replace("세", "").replace(" ", "").replace("이상", "+").replace("~", "-")
     if cleaned in ["85-89", "90-94", "95-99", "100+"]:
         return "85+"
     return cleaned
@@ -621,7 +622,7 @@ def main():
             bar.set_global_opts(
                 title_opts=opts.TitleOpts(title=f"{prop_year}년 {gender_label} 연령별 암종 비중 (%)"),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow", formatter="{a}: {c}%"),
-                legend_opts=opts.LegendOpts(is_show=False), # Hide legend for clarity, or use small font
+                legend_opts=opts.LegendOpts(pos_bottom="0%", orient="horizontal", type_="scroll"),
                 xaxis_opts=opts.AxisOpts(name="연령그룹"),
                 yaxis_opts=opts.AxisOpts(name="비중 (%)", min_=0, max_=100)
             )
@@ -634,6 +635,22 @@ def main():
             st_pyecharts(create_proportion_chart(df_prop_agg, "여자"), height="520px", key=f"prop_f_{prop_year}")
         
         st.info("💡 각 막대는 해당 연령대에서 발생한 전체 암 중 각 암종이 차지하는 비중을 나타냅니다.")
+
+        with st.expander("📝 연령별 암 발생 비중 상세 데이터 보기", expanded=False):
+            # Create a pivot table for the user to see the actual proportions
+            df_table = df_prop_agg.pivot(
+                values="proportion", 
+                index=["gender", "custom_age_group"], 
+                on="cancer_type"
+            ).sort(["gender", "custom_age_group"])
+            
+            # Format custom_age_group as categorical for correct sorting in the table
+            gender_order = ["남자", "여자"]
+            df_table = df_table.with_columns(
+                pl.col("custom_age_group").cast(pl.Categorical)
+            )
+            
+            st.dataframe(df_table.to_pandas(), use_container_width=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
