@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="Cancer Incidence Trend",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded" # 사이드바가 기본으로 열리도록 변경
+    initial_sidebar_state="expanded"
 )
 
 # 환경 변수 로드 (로컬용)
@@ -285,13 +285,6 @@ def main():
     if len(filtered_df) > 0:
         st.subheader(f"📈 {selected_cancer} Trend (Male vs Female)")
         
-        # Prepare Data for Pyecharts
-        # We need to handle multiple age groups and potentially primary/secondary Y-axis
-        x_data = sorted([str(y) for y in filtered_df["year"].unique().to_list()])
-        
-        line_chart = Line(init_opts=opts.InitOpts(width="100%", height="650px"))
-        line_chart.add_xaxis(xaxis_data=x_data)
-        
         # Ranges for Y-axis decision
         max_male = filtered_df.filter(pl.col("gender") == "남")["incidence_rate"].max() or 0
         max_female = filtered_df.filter(pl.col("gender") == "여")["incidence_rate"].max() or 0
@@ -300,57 +293,67 @@ def main():
         range_diff = max(max_male, max_female) / min(max_male, max_female) if min(max_male, max_female) > 0 else 0
         use_dual_axis = range_diff > 2.5
         
+        # Prepare Data for Pyecharts
+        x_data = sorted([str(y) for y in filtered_df["year"].unique().to_list()])
+        
+        line_chart = Line(init_opts=opts.InitOpts(width="100%", height="650px"))
+        line_chart.add_xaxis(xaxis_data=x_data)
+        
+        # Y-Axis options
+        yaxis_male = opts.AxisOpts(name="남 발생률", type_="value", axislabel_opts=opts.LabelOpts(formatter="{value}"))
+        yaxis_female = opts.AxisOpts(name="여 발생률", type_="value", axislabel_opts=opts.LabelOpts(formatter="{value}")) if use_dual_axis else None
+
+        if use_dual_axis:
+            line_chart.extend_axis(yaxis=yaxis_female)
+            st.info("💡 남/여 발생률 수치 차이가 커서 보조축(오른쪽)을 사용하여 표시합니다.")
+
         # Color Palette
         colors_male = ['#5470c6', '#73c0de', '#3ba272', '#516b91', '#002c53']
         colors_female = ['#ee6666', '#fac858', '#fc8452', '#ea7ccc', '#9a60b4']
         
         # Add Male Series
-        male_df = filtered_df.filter(pl.col("gender") == "남").pivot(values="incidence_rate", index="year", on="age_group").sort("year")
-        for i, age in enumerate(selected_ages):
-            if age in male_df.columns:
-                line_chart.add_yaxis(
-                    series_name=f"남 ({age})",
-                    y_axis=male_df[age].fill_null(0).to_list(),
-                    is_smooth=True,
-                    symbol_size=8,
-                    label_opts=opts.LabelOpts(is_show=False),
-                    linestyle_opts=opts.LineStyleOpts(width=3, color=colors_male[i % len(colors_male)]),
-                    itemstyle_opts=opts.ItemStyleOpts(color=colors_male[i % len(colors_male)])
-                )
+        male_data_df = filtered_df.filter(pl.col("gender") == "남")
+        if not male_data_df.is_empty():
+            male_pivot = male_data_df.pivot(values="incidence_rate", index="year", on="age_group").sort("year")
+            for i, age in enumerate(selected_ages):
+                if age in male_pivot.columns:
+                    line_chart.add_yaxis(
+                        series_name=f"남 ({age})",
+                        y_axis=male_pivot[age].fill_null(0).to_list(),
+                        is_smooth=True,
+                        symbol_size=8,
+                        label_opts=opts.LabelOpts(is_show=False),
+                        linestyle_opts=opts.LineStyleOpts(width=3, color=colors_male[i % len(colors_male)]),
+                        itemstyle_opts=opts.ItemStyleOpts(color=colors_male[i % len(colors_male)])
+                    )
         
         # Add Female Series
-        female_df = filtered_df.filter(pl.col("gender") == "여").pivot(values="incidence_rate", index="year", on="age_group").sort("year")
-        for i, age in enumerate(selected_ages):
-            if age in female_df.columns:
-                line_chart.add_yaxis(
-                    series_name=f"여 ({age})",
-                    y_axis=female_df[age].fill_null(0).to_list(),
-                    is_smooth=True,
-                    symbol_size=8,
-                    yaxis_index=1 if use_dual_axis else 0,
-                    label_opts=opts.LabelOpts(is_show=False),
-                    linestyle_opts=opts.LineStyleOpts(width=3, color=colors_female[i % len(colors_female)], type_="dashed"),
-                    itemstyle_opts=opts.ItemStyleOpts(color=colors_female[i % len(colors_female)])
-                )
-
-        yaxis_opts = [opts.AxisOpts(name="남 발생률", type_="value", axislabel_opts=opts.LabelOpts(formatter="{value}"))]
-        if use_dual_axis:
-            yaxis_opts.append(opts.AxisOpts(name="여 발생률", type_="value", axislabel_opts=opts.LabelOpts(formatter="{value}")))
-            st.info("💡 남/여 발생률 수치 차이가 커서 보조축(오른쪽)을 사용하여 표시합니다.")
+        female_data_df = filtered_df.filter(pl.col("gender") == "여")
+        if not female_data_df.is_empty():
+            female_pivot = female_data_df.pivot(values="incidence_rate", index="year", on="age_group").sort("year")
+            for i, age in enumerate(selected_ages):
+                if age in female_pivot.columns:
+                    line_chart.add_yaxis(
+                        series_name=f"여 ({age})",
+                        y_axis=female_pivot[age].fill_null(0).to_list(),
+                        is_smooth=True,
+                        symbol_size=8,
+                        yaxis_index=1 if use_dual_axis else 0,
+                        label_opts=opts.LabelOpts(is_show=False),
+                        linestyle_opts=opts.LineStyleOpts(width=3, color=colors_female[i % len(colors_female)], type_="dashed"),
+                        itemstyle_opts=opts.ItemStyleOpts(color=colors_female[i % len(colors_female)])
+                    )
         
         line_chart.set_global_opts(
             title_opts=opts.TitleOpts(title="남/여 암 발생률 추이 비교", subtitle="실선: 남성, 점선: 여성"),
             tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
             legend_opts=opts.LegendOpts(pos_top="10%", orient="horizontal"),
             xaxis_opts=opts.AxisOpts(name="연도", type_="category", boundary_gap=False),
-            yaxis_opts=yaxis_opts[0],
+            yaxis_opts=yaxis_male,
             datazoom_opts=[opts.DataZoomOpts(type_="inside")],
         )
         
-        if use_dual_axis:
-            line_chart.extend_axis(yaxis=yaxis_opts[1])
-
-        st_pyecharts(line_chart, height="650px", key="cancer_trend_dual_v2")
+        st_pyecharts(line_chart, height="650px", key="cancer_trend_dual_v4")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
