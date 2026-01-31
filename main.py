@@ -600,7 +600,7 @@ def main():
         
         # Calculate proportion (%) based on custom incidence rates within each (gender, custom_age_group)
         df_prop_agg = df_prop_agg.with_columns(
-            (pl.col("custom_incidence_rate") / pl.col("custom_incidence_rate").over(["gender", "custom_age_group"]) * 100).round(1).alias("proportion")
+            (pl.col("custom_incidence_rate") / pl.col("custom_incidence_rate").sum().over(["gender", "custom_age_group"]) * 100).round(1).alias("proportion")
         )
         
         custom_age_order = ["0-19세", "20-39세", "40-49세", "50-59세", "60세+"]
