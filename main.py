@@ -5,7 +5,7 @@ import json
 import os
 import streamlit as st
 from pyecharts import options as opts
-from pyecharts.charts import Line, Bar
+from pyecharts.charts import Line, Bar, Grid
 from streamlit_echarts import st_pyecharts
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
@@ -431,10 +431,13 @@ def main():
                     name="", 
                     axislabel_opts=opts.LabelOpts(font_size=11, margin=15)
                 ),
-                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
-                grid_opts=opts.GridOpts(pos_left="35%", pos_right="10%")
+                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow")
             )
-            return bar
+            
+            # Wrap in Grid to set margins
+            grid = Grid(init_opts=opts.InitOpts(width="100%", height="480px"))
+            grid.add(bar, grid_opts=opts.GridOpts(pos_left="35%", pos_right="10%"))
+            return grid
 
         col_rank_m, col_rank_f = st.columns(2)
         with col_rank_m:
