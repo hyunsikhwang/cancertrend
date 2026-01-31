@@ -615,12 +615,23 @@ def main():
                 return None
             
             # Prepare data pairs for Pie chart
-            data_pairs = []
+            data_raw = []
             for row in subset.iter_rows(named=True):
-                data_pairs.append([row["cancer_type"], row["proportion"]])
+                data_raw.append({"name": row["cancer_type"], "value": row["proportion"]})
             
-            # Sort by proportion descending for better look
-            data_pairs = sorted(data_pairs, key=lambda x: x[1], reverse=True)
+            # Sort by proportion descending
+            data_sorted = sorted(data_raw, key=lambda x: x["value"], reverse=True)
+            
+            # Top 5 and Others
+            top5 = data_sorted[:5]
+            others_val = sum([item["value"] for item in data_sorted[5:]])
+            
+            data_pairs = []
+            for item in top5:
+                data_pairs.append([item["name"], round(item["value"], 1)])
+            
+            if others_val > 0:
+                data_pairs.append(["기타(Others)", round(others_val, 1)])
             
             pie = (
                 Pie(init_opts=opts.InitOpts(width="100%", height="250px"))
@@ -630,7 +641,7 @@ def main():
                     radius=["40%", "70%"],
                     label_opts=opts.LabelOpts(is_show=False),
                 )
-                .set_colors([get_cancer_color(p[0]) for p in data_pairs])
+                .set_colors([get_cancer_color(p[0]) if p[0] != "기타(Others)" else "#d3d3d3" for p in data_pairs])
                 .set_global_opts(
                     title_opts=opts.TitleOpts(
                         title=f"{age_group}",
