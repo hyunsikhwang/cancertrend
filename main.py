@@ -233,9 +233,10 @@ async def _get_processed_data_async():
 
 def main():
     # Hero Section
+    st.image("logo.png", width=120)
     st.markdown("""
-    <div class="hero-container">
-        <div class="hero-title">📊 Cancer Incidence Trend</div>
+    <div class="hero-container" style="text-align: left; padding: 1rem 0;">
+        <div class="hero-title" style="font-size: 2.2rem; margin-top: -10px;">Cancer Incidence Trend</div>
         <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
     </div>
     """, unsafe_allow_html=True)
@@ -296,10 +297,16 @@ def main():
         (pl.col("cancer_type") == selected_cancer) &
         (pl.col("age_group").is_in(selected_ages))
     )
+    # Section: Trends
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_icon1, col_text1 = st.columns([1, 15])
+    with col_icon1:
+        st.image("trend_icon.png", width=40)
+    with col_text1:
+        st.subheader("Annual Incidence Trends")
 
+    # Main Visualization
     if not filtered_df.is_empty():
-        st.subheader(f"📈 {selected_cancer} Trend Analysis")
-        
         # Determine if Dual Axis is needed
         max_male = filtered_df.filter(pl.col("gender") == "남자")["incidence_rate"].max() or 0
         max_female = filtered_df.filter(pl.col("gender") == "여자")["incidence_rate"].max() or 0
@@ -407,7 +414,11 @@ def main():
 
         # New Section: Top 10 Cancers by Gender
         st.markdown("<br><hr>", unsafe_allow_html=True)
-        st.subheader("🏆 Top 10 Cancers Ranking")
+        col_icon2, col_text2 = st.columns([1, 15])
+        with col_icon2:
+            st.image("ranking_icon.png", width=40)
+        with col_text2:
+            st.subheader("Top 10 Cancers Ranking")
         
         mode = st.radio("보기 모드 선택", ["정적 분석 (연도 선택)", "애니메이션 분석 (Bar Chart Race)"], horizontal=True)
         
