@@ -6,7 +6,7 @@ import os
 import streamlit as st
 from pyecharts import options as opts
 from pyecharts.charts import Line, Bar, Grid, Timeline
-from streamlit_echarts import st_pyecharts, JsCode
+from streamlit_echarts import st_pyecharts
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 
@@ -666,16 +666,23 @@ def main():
             bar = Bar(init_opts=opts.InitOpts(width="100%", height="550px"))
             bar.add_xaxis(custom_age_order)
             
-            # Add union series (sorted by size descending, so largest is added first -> bottom)
             for s_name in union_list:
+                # Filter for this series
+                y_vals = series_data[s_name]
+                # Replace 0 with None to hide labels in ECharts
+                y_vals = [v if v > 0 else None for v in y_vals]
+                
+                # Format name for display (newline before KCD code)
+                display_name = s_name.replace('(', '\n(') if '(' in s_name else s_name
+                
                 bar.add_yaxis(
-                    s_name,
-                    series_data[s_name],
+                    display_name,
+                    y_vals,
                     stack="stack1",
                     label_opts=opts.LabelOpts(
                         is_show=True, 
                         position="inside",
-                        formatter=JsCode("function(params) { if (params.value > 0) { return params.seriesName.replace('(', '\\n('); } else { return ''; } }"),
+                        formatter="{a}",
                         font_size=10,
                         color="#fff"
                     ),
@@ -683,14 +690,15 @@ def main():
                 )
             
             # Finally add Others at the top
+            y_vals_others = [v if v > 0 else None for v in series_data["기타(Others)"]]
             bar.add_yaxis(
-                "기타(Others)",
-                series_data["기타(Others)"],
+                "기타\n(Others)",
+                y_vals_others,
                 stack="stack1",
                 label_opts=opts.LabelOpts(
                     is_show=True, 
                     position="inside",
-                    formatter=JsCode("function(params) { if (params.value > 0) { return params.seriesName.replace('(', '\\n('); } else { return ''; } }"),
+                    formatter="{a}",
                     font_size=10,
                     color="#fff"
                 ),
