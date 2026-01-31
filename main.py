@@ -10,6 +10,25 @@ from streamlit_echarts import st_pyecharts
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 
+# Define stable colors for cancer types
+CANCER_COLORS = {
+    "위(C16)": "#5470c6", "간(C22)": "#91cc75", "폐(C33-C34)": "#fac858",
+    "대장(C18-C20)": "#ee6666", "유방(C50)": "#73c0de", "갑상선(C73)": "#3ba272",
+    "전립선(C61)": "#fc8452", "췌장(C25)": "#9a60b4", "담낭 및 기타 담도(C23-C24)": "#ea7ccc",
+    "신장(C64)": "#5470c6", "방광(C67)": "#91cc75", "백혈병(C91-C95)": "#fac858",
+    "비호지킨 림프종(C82-C86 C96)": "#ee6666", "식도(C15)": "#73c0de",
+    "결장(C18)": "#3ba272", "직장(C19-C20)": "#fc8452", "자궁경부(C53)": "#9a60b4"
+}
+
+def get_cancer_color(name):
+    """Returns a stable color for a given cancer name."""
+    if name in CANCER_COLORS:
+        return CANCER_COLORS[name]
+    # Fallback to a hash-based color if not predefined
+    import hashlib
+    hash_object = hashlib.md5(name.encode())
+    return f"#{hash_object.hexdigest()[:6]}"
+
 # Page config
 st.set_page_config(
     page_title="Cancer Incidence Trend",
@@ -408,7 +427,7 @@ def main():
                 (~pl.col("cancer_type").str.contains("모든 ?암"))
             )
 
-            def create_ranking_chart(df, gender_label, color):
+            def create_ranking_chart(df, gender_label, color_hint):
                 # Sort Top 10
                 top10 = df.filter(pl.col("gender") == gender_label).sort("incidence_rate", descending=True).head(10)
                 top10 = top10.reverse()
@@ -416,13 +435,23 @@ def main():
                 c_names = top10["cancer_type"].to_list()
                 c_rates = [round(float(x), 1) for x in top10["incidence_rate"].to_list()]
                 
+                # Create per-item color list
+                bar_colors = [get_cancer_color(name) for name in c_names]
+                
                 bar = Bar(init_opts=opts.InitOpts(width="100%", height="450px"))
                 bar.add_xaxis(c_names)
+                
+                # use data pairs to apply individual colors
+                data_points = []
+                for name, rate, color in zip(c_names, c_rates, bar_colors):
+                    data_points.append(
+                        opts.BarItem(name=name, value=rate, itemstyle_opts=opts.ItemStyleOpts(color=color))
+                    )
+                
                 bar.add_yaxis(
                     "발생률", 
-                    c_rates, 
-                    label_opts=opts.LabelOpts(position="right"),
-                    itemstyle_opts=opts.ItemStyleOpts(color=color)
+                    data_points, 
+                    label_opts=opts.LabelOpts(position="right")
                 )
                 bar.reversal_axis()
                 bar.set_global_opts(
@@ -449,7 +478,7 @@ def main():
             # Bar Chart Race using Timeline
             st.info("💡 하단의 플레이 버튼(▶)을 누르면 1999년부터 2023년까지의 변화를 보실 수 있습니다.")
             
-            def create_race_chart(df, gender_label, color):
+            def create_race_chart(df, gender_label):
                 tl = Timeline(init_opts=opts.InitOpts(width="100%", height="520px"))
                 tl.add_schema(is_auto_play=False, play_interval=800, is_loop_play=False, pos_bottom="-5px")
                 
@@ -465,14 +494,21 @@ def main():
                         c_names = year_df["cancer_type"].to_list()
                         c_rates = [round(float(x), 1) for x in year_df["incidence_rate"].to_list()]
                         
+                        # Create per-item color list
+                        data_points = []
+                        for name, rate in zip(c_names, c_rates):
+                            color = get_cancer_color(name)
+                            data_points.append(
+                                opts.BarItem(name=name, value=rate, itemstyle_opts=opts.ItemStyleOpts(color=color))
+                            )
+
                         bar = (
                             Bar()
                             .add_xaxis(c_names)
                             .add_yaxis(
                                 "발생률", 
-                                c_rates, 
-                                label_opts=opts.LabelOpts(position="right"),
-                                itemstyle_opts=opts.ItemStyleOpts(color=color)
+                                data_points, 
+                                label_opts=opts.LabelOpts(position="right")
                             )
                             .reversal_axis()
                             .set_global_opts(
@@ -493,9 +529,9 @@ def main():
 
             col_race_m, col_race_f = st.columns(2)
             with col_race_m:
-                st_pyecharts(create_race_chart(data, "남자", "#5470c6"), height="550px", key="race_male")
+                st_pyecharts(create_race_chart(data, "남자"), height="550px", key="race_male")
             with col_race_f:
-                st_pyecharts(create_race_chart(data, "여자", "#ee6666"), height="550px", key="race_female")
+                st_pyecharts(create_race_chart(data, "여자"), height="550px", key="race_female")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
