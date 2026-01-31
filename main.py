@@ -24,31 +24,6 @@ load_dotenv()
 # API 키 가져오기 (Streamlit Secrets 우선, 없으면 환경 변수)
 API_KEY = st.secrets.get("KOSIS_API_KEY") or os.getenv("KOSIS_API_KEY")
 
-def main():
-    # Hero Section
-    st.markdown("""
-    <div class="hero-container">
-        <div class="hero-title">📊 Cancer Incidence Trend</div>
-        <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if not API_KEY:
-        st.error("🔑 **KOSIS_API_KEY not found.**")
-        st.info("Streamlit Cloud의 App Settings > Secrets에 `KOSIS_API_KEY = 'your_key_here'`를 추가해주세요.")
-        return
-
-    try:
-        data = get_processed_data()
-    except Exception as e:
-        st.error(f"❌ **Data Processing Error:** {e}")
-        return
-
-    if data is None or len(data) == 0:
-        st.error("📡 **Failed to fetch data from KOSIS API.**")
-        st.warning("API 키가 유효한지 또는 KOSIS 서버가 정상인지 확인해주세요.")
-        return
-
 # Custom CSS for Value Horizon Look & Feel
 st.markdown("""
 <style>
@@ -240,6 +215,30 @@ async def _get_processed_data_async():
     
     return final_df
 
+def main():
+    # Hero Section
+    st.markdown("""
+    <div class="hero-container">
+        <div class="hero-title">📊 Cancer Incidence Trend</div>
+        <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not API_KEY:
+        st.error("🔑 **KOSIS_API_KEY not found.**")
+        st.info("Streamlit Cloud의 App Settings > Secrets에 `KOSIS_API_KEY = 'your_key_here'`를 추가해주세요.")
+        return
+
+    try:
+        data = get_processed_data()
+    except Exception as e:
+        st.error(f"❌ **Data Processing Error:** {e}")
+        return
+
+    if data is None or len(data) == 0:
+        st.error("📡 **Failed to fetch data from KOSIS API.**")
+        st.warning("API 키가 유효한지 또는 KOSIS 서버가 정상인지 확인해주세요.")
+        return
 
     # Sidebar Filters
     st.sidebar.markdown("### Search Filters")
@@ -312,7 +311,7 @@ async def _get_processed_data_async():
             datazoom_opts=[opts.DataZoomOpts(type_="inside")],
         )
         
-        st_pyecharts(line_chart, height="600px", key="cancer_trend_chart_v2")
+        st_pyecharts(line_chart, height="600px", key="cancer_trend_chart_v3")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
