@@ -184,9 +184,12 @@ async def _get_processed_data_async():
     # 조인
     joined = df_cancer.join(df_pop, on=["year", "gender", "age_group"], how="left")
     
-    # 연령별 발생률 계산
+    # 연령별 발생률 계산 (Population이 0인 경우 처리)
     age_seg_df = joined.filter(pl.col("population").is_not_null()).with_columns(
-        ((pl.col("cases") / pl.col("population")) * 100000).round(2).alias("incidence_rate")
+        (pl.when(pl.col("population") > 0)
+         .then((pl.col("cases") / pl.col("population")) * 100000)
+         .otherwise(0.0))
+        .round(2).alias("incidence_rate")
     )
     
     # 전체 연령(Total) 합계 계산
@@ -195,7 +198,10 @@ async def _get_processed_data_async():
         pl.col("population").sum()
     ]).with_columns([
         pl.lit("계(전체)").alias("age_group"),
-        ((pl.col("cases") / pl.col("population")) * 100000).round(2).alias("incidence_rate")
+        (pl.when(pl.col("population") > 0)
+         .then((pl.col("cases") / pl.col("population")) * 100000)
+         .otherwise(0.0))
+        .round(2).alias("incidence_rate")
     ])
     
     # 최종 결합
@@ -300,7 +306,11 @@ def main():
                     y_vals = []
                     male_dict = dict(zip(male_pivot["year"].to_list(), male_pivot[age].to_list()))
                     for y in years:
-                        y_vals.append(male_dict.get(y, 0))
+                        val = male_dict.get(y, 0)
+                        # Handle NaN/None explicitly for pyecharts
+                        if val is None or (isinstance(val, float) and val != val):
+                            val = 0
+                        y_vals.append(val)
                     
                     line_chart.add_yaxis(
                         series_name=f"남 ({age})",
@@ -321,7 +331,11 @@ def main():
                     y_vals = []
                     female_dict = dict(zip(female_pivot["year"].to_list(), female_pivot[age].to_list()))
                     for y in years:
-                        y_vals.append(female_dict.get(y, 0))
+                        val = female_dict.get(y, 0)
+                        # Handle NaN/None explicitly for pyecharts
+                        if val is None or (isinstance(val, float) and val != val):
+                            val = 0
+                        y_vals.append(val)
                         
                     line_chart.add_yaxis(
                         series_name=f"여 ({age})",
@@ -357,12 +371,17 @@ def main():
             )
             st.info("💡 남/여 발생률 차이가 커서 우측 보조축을 사용합니다.")
 
+        # pyecharts set_global_opts expects a list or single object for yaxis_opts
+        # However, for dual axis, we usually use extend_axis if we set the first one in global_opts
+        # or we can pass a list of AxisOpts if the version supports it.
+        # To be safe, we'll use set_global_opts for common settings and ensure the first axis is visible.
+
         line_chart.set_global_opts(
             title_opts=opts.TitleOpts(title="Annual Incidence per 100k", subtitle="Solid: Male, Dashed: Female"),
             tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
             legend_opts=opts.LegendOpts(pos_top="10%", orient="horizontal"),
             xaxis_opts=opts.AxisOpts(name="연도", type_="category", boundary_gap=False),
-            yaxis_opts=yaxis_opts[0], # Must be single AxisOpts here if using extend_axis later or just pass the list
+            yaxis_opts=yaxis_opts[0],
             datazoom_opts=[
                 opts.DataZoomOpts(type_="slider", range_start=0, range_end=100),
                 opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
