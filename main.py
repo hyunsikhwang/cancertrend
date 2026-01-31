@@ -249,13 +249,16 @@ async def _get_processed_data_async():
 
 def main():
     # Hero Section
-    st.image("app_logo.png", width=120)
-    st.markdown("""
-    <div class="hero-container" style="text-align: left; padding: 1rem 0;">
-        <div class="hero-title" style="font-size: 2.2rem; margin-top: -10px;">Cancer Incidence Trend</div>
-        <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
-    </div>
-    """, unsafe_allow_html=True)
+    h_col1, h_col2 = st.columns([1, 6])
+    with h_col1:
+        st.image("app_logo.png", width=120)
+    with h_col2:
+        st.markdown("""
+        <div class="hero-container" style="text-align: left; padding: 0.5rem 0;">
+            <div class="hero-title" style="font-size: 2.2rem; margin-top: 10px;">Cancer Incidence Trend</div>
+            <div class="hero-subtitle">KOSIS API 기반 암 발생률 추이 분석 (1999-2023)</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     if not API_KEY:
         st.error("🔑 **KOSIS_API_KEY not found.**")
