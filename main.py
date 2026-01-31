@@ -375,12 +375,15 @@ def main():
             tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
             legend_opts=opts.LegendOpts(pos_top="10%", orient="horizontal"),
             xaxis_opts=opts.AxisOpts(name="연도", type_="category", boundary_gap=False),
-            yaxis_opts=yaxis_opts,
+            yaxis_opts=yaxis_opts[0],
             datazoom_opts=[
                 opts.DataZoomOpts(type_="slider", range_start=0, range_end=100),
                 opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
             ],
         )
+        
+        if use_dual_axis:
+            line_chart.extend_axis(yaxis=yaxis_opts[1])
         
         st_pyecharts(line_chart, height="680px", key="cancer_trend_dual_v_final")
 
