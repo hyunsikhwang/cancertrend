@@ -674,7 +674,13 @@ def main():
                     s_name,
                     series_data[s_name],
                     stack="stack1",
-                    label_opts=opts.LabelOpts(is_show=False),
+                    label_opts=opts.LabelOpts(
+                        is_show=True, 
+                        position="inside",
+                        formatter="{a}",
+                        font_size=10,
+                        color="#fff"
+                    ),
                     itemstyle_opts=opts.ItemStyleOpts(color=get_cancer_color(s_name))
                 )
             
@@ -683,14 +689,20 @@ def main():
                 "기타(Others)",
                 series_data["기타(Others)"],
                 stack="stack1",
-                label_opts=opts.LabelOpts(is_show=False),
+                label_opts=opts.LabelOpts(
+                    is_show=True, 
+                    position="inside",
+                    formatter="{a}",
+                    font_size=10,
+                    color="#fff"
+                ),
                 itemstyle_opts=opts.ItemStyleOpts(color="#d3d3d3")
             )
             
             bar.set_global_opts(
                 title_opts=opts.TitleOpts(title=f"{prop_year}년 {gender_label} 연령별 암종 비중 (%)"),
                 tooltip_opts=opts.TooltipOpts(trigger="item", formatter="{a}<br/>{b}: {c}%"),
-                legend_opts=opts.LegendOpts(pos_bottom="0%", orient="horizontal", type_="scroll"),
+                legend_opts=opts.LegendOpts(is_show=False),
                 xaxis_opts=opts.AxisOpts(name="연령그룹"),
                 yaxis_opts=opts.AxisOpts(name="비중 (%)", min_=0, max_=100)
             )
