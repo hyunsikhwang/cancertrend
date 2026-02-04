@@ -289,15 +289,17 @@ def main():
                 default_idx = i
                 break
         
-        selected_cancer = st.selectbox(
-            "Cancer Type", 
+        selected_cancers = st.multiselect(
+            "Cancer Type(s)", 
             cancer_types, 
-            index=default_idx
+            default=[cancer_types[default_idx]]
         )
         
-        # 제외할 암종 선택 (모든암 선택 시에만)
+        # 제외할 암종 선택 (목록에 "모든암" 성격의 항목이 포함된 경우에만)
         excluded_cancers = []
-        if "모든" in selected_cancer and "암" in selected_cancer and "C00-C96" in selected_cancer:
+        is_all_cancer_selected = any("모든" in ct and "암" in ct for ct in selected_cancers)
+        
+        if is_all_cancer_selected:
             other_cancer_types = [ct for ct in cancer_types if not ("모든" in ct and "암" in ct)]
             excluded_cancers = st.multiselect(
                 "제외할 암종 선택 (발생률 차감)",
@@ -322,38 +324,59 @@ def main():
     st.sidebar.info("차트 하단의 슬라이더를 통해 분석 기간을 자유롭게 조정할 수 있습니다.")
 
     # Apply Filters (excluding year range as it's handled by Pyecharts slider)
-    if excluded_cancers:
-        # 1. 모든암 데이터와 제외할 암종 데이터 가져오기
+    if not selected_cancers:
+        filtered_df = pl.DataFrame()
+    elif is_all_cancer_selected:
+        # 1. 모든암 모드 (리스트에 모든암이 포함된 경우, 첫 번째 모든암 항목 기준)
+        primary_all_cancer = [ct for ct in selected_cancers if "모든" in ct and "암" in ct][0]
         all_cancer_df = data.filter(
-            (pl.col("cancer_type") == selected_cancer) &
-            (pl.col("age_group").is_in(selected_ages))
-        )
-        exclude_df = data.filter(
-            (pl.col("cancer_type").is_in(excluded_cancers)) &
+            (pl.col("cancer_type") == primary_all_cancer) &
             (pl.col("age_group").is_in(selected_ages))
         )
         
-        # 2. 제외할 암종의 합계 계산 (연도, 성별, 연령그룹별)
-        exclude_sum = exclude_df.group_by(["year", "gender", "age_group"]).agg(
-            pl.col("cases").sum().alias("exclude_cases")
-        )
-        
-        # 3. 모든암에서 제외분 차감 및 발생률 재계산
-        filtered_df = all_cancer_df.join(exclude_sum, on=["year", "gender", "age_group"], how="left").with_columns(
-            pl.col("exclude_cases").fill_null(0)
-        ).with_columns(
-            (pl.col("cases") - pl.col("exclude_cases")).alias("cases")
-        ).with_columns(
-            (pl.when(pl.col("population") > 0)
-             .then((pl.col("cases") / pl.col("population")) * 100000)
-             .otherwise(0.0))
-            .round(2).alias("incidence_rate")
-        ).drop("exclude_cases")
+        if excluded_cancers:
+            exclude_df = data.filter(
+                (pl.col("cancer_type").is_in(excluded_cancers)) &
+                (pl.col("age_group").is_in(selected_ages))
+            )
+            exclude_sum = exclude_df.group_by(["year", "gender", "age_group"]).agg(
+                pl.col("cases").sum().alias("exclude_cases")
+            )
+            filtered_df = all_cancer_df.join(exclude_sum, on=["year", "gender", "age_group"], how="left").with_columns(
+                pl.col("exclude_cases").fill_null(0)
+            ).with_columns(
+                (pl.col("cases") - pl.col("exclude_cases")).alias("cases")
+            ).with_columns(
+                (pl.when(pl.col("population") > 0)
+                 .then((pl.col("cases") / pl.col("population")) * 100000)
+                 .otherwise(0.0))
+                .round(2).alias("incidence_rate")
+            ).drop("exclude_cases")
+        else:
+            filtered_df = all_cancer_df
     else:
-        filtered_df = data.filter(
-            (pl.col("cancer_type") == selected_cancer) &
+        # 2. 개별 암종 복수 선택 및 합산 모드
+        base_filtered = data.filter(
+            (pl.col("cancer_type").is_in(selected_cancers)) &
             (pl.col("age_group").is_in(selected_ages))
         )
+        
+        if len(selected_cancers) > 1:
+            # 여러 개 선택 시 합산
+            filtered_df = base_filtered.group_by(["year", "gender", "age_group"]).agg([
+                pl.col("cases").sum(),
+                pl.col("population").first() # 동일 그룹이면 인구는 같음
+            ]).with_columns(
+                (pl.when(pl.col("population") > 0)
+                 .then((pl.col("cases") / pl.col("population")) * 100000)
+                 .otherwise(0.0))
+                .round(2).alias("incidence_rate")
+            ).with_columns(
+                pl.lit(", ".join(selected_cancers)).alias("cancer_type")
+            )
+        else:
+            # 단일 선택 시 그대로 사용
+            filtered_df = base_filtered
     # Section: Trends
     st.markdown("<br>", unsafe_allow_html=True)
     col_icon1, col_text1 = st.columns([1, 15])
