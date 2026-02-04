@@ -452,7 +452,7 @@ def main():
                         symbol_size=8,
                         yaxis_index=1 if use_dual_axis else 0,
                         label_opts=opts.LabelOpts(is_show=False),
-                        linestyle_opts=opts.LineStyleOpts(width=3, color=colors_female[i % len(colors_female)], type_="dashed"),
+                        linestyle_opts=opts.LineStyleOpts(width=3, color=colors_female[i % len(colors_female)]),
                         itemstyle_opts=opts.ItemStyleOpts(color=colors_female[i % len(colors_female)])
                     )
 
