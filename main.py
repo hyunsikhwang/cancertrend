@@ -294,6 +294,16 @@ def main():
             cancer_types, 
             index=default_idx
         )
+        
+        # 제외할 암종 선택 (모든암 선택 시에만)
+        excluded_cancers = []
+        if "모든" in selected_cancer and "암" in selected_cancer and "C00-C96" in selected_cancer:
+            other_cancer_types = [ct for ct in cancer_types if not ("모든" in ct and "암" in ct)]
+            excluded_cancers = st.multiselect(
+                "제외할 암종 선택 (발생률 차감)",
+                other_cancer_types,
+                help="일부 암종을 제외한 전체 발생률을 보려면 여기서 선택하세요."
+            )
     
     with col2:
         age_groups = data["age_group"].unique().sort().to_list()
@@ -312,10 +322,38 @@ def main():
     st.sidebar.info("차트 하단의 슬라이더를 통해 분석 기간을 자유롭게 조정할 수 있습니다.")
 
     # Apply Filters (excluding year range as it's handled by Pyecharts slider)
-    filtered_df = data.filter(
-        (pl.col("cancer_type") == selected_cancer) &
-        (pl.col("age_group").is_in(selected_ages))
-    )
+    if excluded_cancers:
+        # 1. 모든암 데이터와 제외할 암종 데이터 가져오기
+        all_cancer_df = data.filter(
+            (pl.col("cancer_type") == selected_cancer) &
+            (pl.col("age_group").is_in(selected_ages))
+        )
+        exclude_df = data.filter(
+            (pl.col("cancer_type").is_in(excluded_cancers)) &
+            (pl.col("age_group").is_in(selected_ages))
+        )
+        
+        # 2. 제외할 암종의 합계 계산 (연도, 성별, 연령그룹별)
+        exclude_sum = exclude_df.group_by(["year", "gender", "age_group"]).agg(
+            pl.col("cases").sum().alias("exclude_cases")
+        )
+        
+        # 3. 모든암에서 제외분 차감 및 발생률 재계산
+        filtered_df = all_cancer_df.join(exclude_sum, on=["year", "gender", "age_group"], how="left").with_columns(
+            pl.col("exclude_cases").fill_null(0)
+        ).with_columns(
+            (pl.col("cases") - pl.col("exclude_cases")).alias("cases")
+        ).with_columns(
+            (pl.when(pl.col("population") > 0)
+             .then((pl.col("cases") / pl.col("population")) * 100000)
+             .otherwise(0.0))
+            .round(2).alias("incidence_rate")
+        ).drop("exclude_cases")
+    else:
+        filtered_df = data.filter(
+            (pl.col("cancer_type") == selected_cancer) &
+            (pl.col("age_group").is_in(selected_ages))
+        )
     # Section: Trends
     st.markdown("<br>", unsafe_allow_html=True)
     col_icon1, col_text1 = st.columns([1, 15])
